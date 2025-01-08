@@ -82,7 +82,7 @@ class MCQuery {
                             'format_player_list' => self::formatPlayerList($player_list),
                             'x_players_online' => $language->get('general', 'currently_x_players_online', ['count' => Output::getClean($query['players']['online'])]),
                             'motd' => self::getMotd(
-                                $query['description']['text'],
+                                is_string($text = $query['description']) ? $text : $text['text'],
                                 $query['description']['extra'] ?? [],
                             ),
                             'version' => $query['version']['name']
@@ -169,7 +169,7 @@ class MCQuery {
      * @param array $player_list Unformatted array of players in format 'id' => string (UUID), 'name' => string (username)
      * @return array Array of formatted players
      **/
-    private static function formatPlayerList(array $player_list): array {
+    public static function formatPlayerList(array $player_list): array {
         $formatted = [];
 
         $integration = Integrations::getInstance()->getIntegration('Minecraft');
@@ -303,7 +303,9 @@ class MCQuery {
                     continue;
                 }
 
-                $query = ExternalMCQuery::query($query_ip[0], ($query_ip[1] ?? ($server['bedrock'] ? 19132 : 25565)), $server['bedrock']);
+                $is_bedrock = isset($server['bedrock']) && $server['bedrock'] === true;
+
+                $query = ExternalMCQuery::query($query_ip[0], ($query_ip[1] ?? ($is_bedrock ? 19132 : 25565)), $is_bedrock);
 
                 if ($query !== false && !$query->error && isset($query->response)) {
                     if ($accumulate === false) {
@@ -362,11 +364,11 @@ class MCQuery {
 
         // some servers (originrealms) return a weird MOTD
         if (count($modern_format) === 1 && is_array($modern_format[0])) {
-            $modern_format = $modern_format[0]['extra'];
+            $modern_format = $modern_format[0]['extra'] ?? [];
         }
         // and sometimes it's doubly nested...
         if (count($modern_format) === 1 && is_array($modern_format[0])) {
-            $modern_format = $modern_format[0]['extra'];
+            $modern_format = $modern_format[0]['extra'] ?? [];
         }
 
         $motd = '';
@@ -422,9 +424,24 @@ class MCQuery {
         $green1 = hexdec(substr($rgb1, 2, 2));
         $blue1 = hexdec(substr($rgb1, 4, 2));
 
-        $red2 = hexdec(substr($rgb2, 0, 2));
-        $green2 = hexdec(substr($rgb2, 2, 2));
-        $blue2 = hexdec(substr($rgb2, 4, 2));
+        $red2_substr = substr($rgb2, 0, 2);
+        $green2_substr = substr($rgb2, 2, 2);
+        $blue2_substr = substr($rgb2, 4, 2);
+
+        $red2 = 0;
+        if (ctype_xdigit($red2_substr)) {
+            $red2 = hexdec($red2_substr);
+        }
+
+        $green2 = 0;
+        if (ctype_xdigit($green2_substr)) {
+            $green2 = hexdec($green2_substr);
+        }
+
+        $blue2 = 0;
+        if (ctype_xdigit($blue2_substr)) {
+            $blue2 = hexdec($blue2_substr);
+        }
 
         return abs($red1 - $red2) + abs($green1 - $green2) + abs($blue1 - $blue2);
     }

@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr13
+ *  NamelessMC version 2.1.0
  *
  *  License: MIT
  *
@@ -180,9 +180,10 @@ if (Input::exists()) {
                 // Get last post ID
                 $last_post_id = DB::getInstance()->lastId();
                 $content = EventHandler::executeEvent('preTopicCreate', [
+                    'alert_full' => ['path' => ROOT_PATH . '/modules/Forum/language', 'file' => 'forum', 'term' => 'user_tag_info', 'replace' => '{{author}}', 'replace_with' => $user->getDisplayname()],
+                    'alert_short' => ['path' => ROOT_PATH . '/modules/Forum/language', 'file' => 'forum', 'term' => 'user_tag'],
+                    'alert_url' => URL::build('/forum/topic/' . urlencode($topic_id), 'pid=' . urlencode($last_post_id)),
                     'content' => $content,
-                    'post_id' => $last_post_id,
-                    'topic_id' => $topic_id,
                     'user' => $user,
                 ])['content'];
 
@@ -199,23 +200,16 @@ if (Input::exists()) {
                 Log::getInstance()->log(Log::Action('forums/topic/create'), Output::getClean(Input::get('title')));
 
                 // Execute hooks and pass $available_hooks
-                $default_forum_language = new Language(ROOT_PATH . '/modules/Forum/language', DEFAULT_LANGUAGE);
-                $available_hooks = DB::getInstance()->get('forums', ['id', $fid])->results();
-                $available_hooks = json_decode($available_hooks[0]->hooks);
-                EventHandler::executeEvent('newTopic', [
-                    'user_id' => Output::getClean($user->data()->id),
-                    'username' => $user->getDisplayname(true),
-                    'nickname' => $user->getDisplayname(),
-                    'content' => $default_forum_language->get('forum', 'new_topic_text', [
-                        'forum' => $forum_title,
-                        'author' => $user->getDisplayname(),
-                    ]),
-                    'content_full' => strip_tags(str_ireplace(['<br />', '<br>', '<br/>'], "\r\n", Input::get('content'))),
-                    'avatar_url' => $user->getAvatar(128, true),
-                    'title' => Input::get('title'),
-                    'url' => Util::getSelfURL() . ltrim(URL::build('/forum/topic/' . urlencode($topic_id) . '-' . $forum->titleToURL(Input::get('title'))), '/'),
-                    'available_hooks' => $available_hooks == null ? [] : $available_hooks
-                ]);
+                $available_hooks = DB::getInstance()->get('forums', ['id', $fid])->first();
+                $available_hooks = json_decode($available_hooks->hooks) ?? [];
+                EventHandler::executeEvent(new TopicCreatedEvent(
+                    $user,
+                    $forum_title,
+                    Input::get('title'),
+                    Input::get('content'),
+                    $topic_id,
+                    $available_hooks,
+                ));
 
                 Session::flash('success_post', $forum_language->get('forum', 'post_successful'));
 

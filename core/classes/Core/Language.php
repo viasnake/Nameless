@@ -56,6 +56,10 @@ class Language {
             'name' => 'Greek',
             'htmlCode' => 'el',
         ],
+        'hu_HU' => [
+            'name' => 'Hungarian',
+            'htmlCode' => 'hu',
+        ],
         'it_IT' => [
             'name' => 'Italian',
             'htmlCode' => 'it',
@@ -92,6 +96,10 @@ class Language {
             'name' => 'Slovak',
             'htmlCode' => 'sk',
         ],
+        'sq_AL' => [
+            'name' => 'Albanian',
+            'htmlCode' => 'sq',
+        ],
         'es_419' => [
             'name' => 'Spanish',
             'htmlCode' => 'es',
@@ -115,6 +123,30 @@ class Language {
         'uk_UA' => [
             'name' => 'Ukrainian',
             'htmlCode' => 'uk',
+        ],
+        'ko_KR' => [
+            'name' => 'Korean (Korea)',
+            'htmlCode' => 'ko',
+        ],
+        'vi_VN' => [
+            'name' => 'Vietnamese',
+            'htmlCode' => 'vi',
+        ],
+        'hr_HR' => [
+            'name' => 'Croatian',
+            'htmlCode' => 'hr',
+        ],
+        'id_ID' => [
+            'name' => 'Indonesian',
+            'htmlCode' => 'id',
+        ],
+        'fi_FI' => [
+            'name' => 'Finnish',
+            'htmlCode' => 'fi',
+        ],
+        'lv_LV' => [
+            'name' => 'Latvian (Latvia)',
+            'htmlCode' => 'lv',
         ],
     ];
 
@@ -162,13 +194,13 @@ class Language {
         $this->_activeLanguage = $active_language ?? LANGUAGE ?? 'en_UK';
 
         // Require file
-        if ($module == null || $module === 'core') {
+        if ($module === 'core') {
             $path = implode(DIRECTORY_SEPARATOR, [ROOT_PATH, 'custom', 'languages', '__lng__.json']);
         } else {
             $path = str_replace('/', DIRECTORY_SEPARATOR, $module) . DIRECTORY_SEPARATOR . '__lng__.json';
         }
 
-        $this->_activeLanguageFile = $path;
+        $this->_activeLanguageFile = str_replace('__lng__', $this->_activeLanguage, $path);
 
         // HTML language definition
         if (!defined('HTML_LANG')) {
@@ -182,7 +214,7 @@ class Language {
 
         $this->_i18n = new i18next(
             $this->_activeLanguage,
-            $this->_activeLanguageFile,
+            $path,
             'en_UK'
         );
     }
@@ -195,7 +227,7 @@ class Language {
      * @param array $variables Any variables to pass through to the translation.
      * @return string Translated phrase.
      */
-    public function get(string $section, ?string $term, array $variables = []): string {
+    public function get(string $section, ?string $term = null, array $variables = []): string {
         if ($term) {
             $section .= '/' . $term;
         }
@@ -234,44 +266,43 @@ class Language {
      * @param string $value New value to set for term.
      */
     public function set(string $section, string $term, string $value): void {
-        $editing_file = implode(DIRECTORY_SEPARATOR, [ROOT_PATH, 'custom', 'languages', $this->_activeLanguage . '.json']);
-        $json = json_decode(file_get_contents($editing_file), true);
+        $json = json_decode(file_get_contents($this->_activeLanguageFile), true);
 
         $json[$section . '/' . $term] = $value;
 
         ksort($json);
-        file_put_contents($editing_file, json_encode($json, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+        file_put_contents($this->_activeLanguageFile, json_encode($json, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
     }
 
     /**
      * Attempt to get a language code from browser headers for setting an automatic language for guests.
-     * If the Intl extension is loaded, it uses the builtin <code>Locale::acceptFromHttp(...)</code> method.
      *
      * @param string $header <code>HTTP_ACCEPT_LANGUAGE</code> header.
-     * @return false|string The browsers preferred language, or false if there is no valid preferred language.
+     * @return false|array The browsers preferred language and its name, or false if there is no valid preferred language.
      */
     public static function acceptFromHttp(string $header) {
-        // If the Intl extension is enabled, use the Locale::acceptFromHttp class
+        // If the Intl extension is enabled, try to use the Locale::acceptFromHttp class,
+        // which is more accurate than the below method, but often contains more specific languages than we support.
         if (
             extension_loaded('intl') &&
             class_exists(Locale::class) &&
             method_exists(Locale::class, 'acceptFromHttp')
         ) {
-            return Locale::acceptFromHttp($header);
+            $locale = Locale::acceptFromHttp($header);
+            if (array_key_exists($locale, self::LANGUAGES)) {
+                return [$locale, self::LANGUAGES[$locale]['name']];
+            }
         }
 
-        $prefLocales = array_reduce(
+        // "Accept-Language: en-US,en;q=0.5" -> ["en_US", "en"]
+        $header_locales = array_map(
+            static fn ($pref) => str_replace('-', '_', explode(';q=', $pref)[0]),
             explode(',', $header),
-            static function ($res, $el) {
-                [$lang, $weight] = array_merge(explode(';q=', $el), [1]);
-                $res[$lang] = (float) $weight;
-                return $res;
-            }, []
         );
 
-        foreach ($prefLocales as $locale) {
+        foreach ($header_locales as $locale) {
             if (array_key_exists($locale, self::LANGUAGES)) {
-                return $locale;
+                return [$locale, self::LANGUAGES[$locale]['name']];
             }
         }
 

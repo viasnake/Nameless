@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr9
+ *  NamelessMC version 2.1.2
  *
  *  License: MIT
  *
@@ -74,7 +74,7 @@ if (!isset($_GET['view'])) {
             }
 
             $log_title = $language->get('admin', 'acp_logins');
-            $logs = DB::getInstance()->orderWhere('logs', 'action = \'acp_login\'', 'time', 'DESC')->results();
+            $logs = DB::getInstance()->orderWhere('logs', 'action = \'acp_login\'', 'time', 'DESC LIMIT 500')->results();
 
             $cols = 3;
             $col_titles = [
@@ -89,7 +89,9 @@ if (!isset($_GET['view'])) {
 
                 $rows[] = [
                     0 => [
-                        'content' => '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                        'content' => $target_user->exists()
+                            ? '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                            : $language->get('general', 'deleted_user')
                     ],
                     1 => [
                         'content' => '<a href="' . URL::build('/panel/users/ip_lookup/', 'ip=' . Output::getClean($log->ip)) . '">' . Output::getClean($log->ip) . '</a>'
@@ -109,7 +111,7 @@ if (!isset($_GET['view'])) {
             }
 
             $log_title = $language->get('admin', 'template_changes');
-            $logs = DB::getInstance()->orderWhere('logs', 'action = \'acp_template_update\'', 'time', 'DESC')->results();
+            $logs = DB::getInstance()->orderWhere('logs', 'action = \'acp_template_update\'', 'time', 'DESC LIMIT 500')->results();
 
             $cols = 4;
             $col_titles = [
@@ -125,7 +127,9 @@ if (!isset($_GET['view'])) {
 
                 $rows[] = [
                     0 => [
-                        'content' => '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                        'content' => $target_user->exists()
+                            ? '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                            : $language->get('general', 'deleted_user')
                     ],
                     1 => [
                         'content' => '<a href="' . URL::build('/panel/users/ip_lookup/', 'ip=' . urlencode($log->ip)) . '">' . Output::getClean($log->ip) . '</a>'
@@ -148,7 +152,7 @@ if (!isset($_GET['view'])) {
             }
 
             $log_title = $language->get('admin', 'email_logs');
-            $logs = DB::getInstance()->orderWhere('logs', 'action = \'acp_email_mass_message\'', 'time', 'DESC')->results();
+            $logs = DB::getInstance()->orderWhere('logs', 'action = \'acp_email_mass_message\'', 'time', 'DESC LIMIT 500')->results();
 
             $cols = 3;
             $col_titles = [
@@ -163,7 +167,9 @@ if (!isset($_GET['view'])) {
 
                 $rows[] = [
                     0 => [
-                        'content' => '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                        'content' => $target_user->exists()
+                            ? '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                            : $language->get('general', 'deleted_user')
                     ],
                     1 => [
                         'content' => '<a href="' . URL::build('/panel/users/ip_lookup/', 'ip=' . urlencode($log->ip)) . '">' . Output::getClean($log->ip) . '</a>'
@@ -182,7 +188,7 @@ if (!isset($_GET['view'])) {
             }
 
             $log_title = $language->get('admin', 'group_sync_logs');
-            $logs_set = DB::getInstance()->orderWhere('logs', 'action = \'discord_role_set\' OR action = \'mc_group_sync_set\' ', 'time', 'DESC')->results();
+            $logs_set = DB::getInstance()->orderWhere('logs', 'action LIKE \'%_role_set\' OR action LIKE \'%_group_set\'OR action = \'mc_group_sync_set\' ', 'time', 'DESC LIMIT 500')->results();
 
             $cols = 5;
             $col_titles = [
@@ -211,7 +217,9 @@ if (!isset($_GET['view'])) {
 
                 $rows[] = [
                     0 => [
-                        'content' => '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                        'content' => $target_user->exists()
+                            ? '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                            : $language->get('general', 'deleted_user')
                     ],
                     1 => [
                         'content' => date(DATE_FORMAT, $log->time),
@@ -238,7 +246,7 @@ if (!isset($_GET['view'])) {
             }
 
             $log_title = $language->get('admin', 'all_logs');
-            $logs = DB::getInstance()->orderWhere('logs', 'id <> 0', 'time', 'DESC')->results();
+            $logs = DB::getInstance()->orderWhere('logs', 'id <> 0', 'time', 'DESC LIMIT 500')->results();
 
             $cols = 5;
             $col_titles = [
@@ -259,7 +267,8 @@ if (!isset($_GET['view'])) {
                     0 => [
                         'content' => $log->user_id == 0
                             ? $language->get('general', 'none')
-                            : '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                            : ($target_user->exists() ? '<a style="' . $target_user->getGroupStyle() . '" href="' . URL::build('/panel/user/' . urlencode($log->user_id . '-' . $target_user->getDisplayname(true))) . '">' . Output::getClean($target_user->getDisplayname()) . '</a>'
+                            : $language->get('general', 'deleted_user'))
                     ],
                     1 => [
                         'content' => '<a href="' . URL::build('/panel/users/ip_lookup/', 'ip=' . urlencode($log->ip)) . '">' . Output::getClean($log->ip) . '</a>'

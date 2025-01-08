@@ -37,6 +37,16 @@ class Validate {
     public const AGREE = 'agree';
 
     /**
+     * @var string Check the numeric value is at least x
+     */
+    public const AT_LEAST = 'at_least';
+
+    /**
+     * @var string Check the numeric value is at most x
+     */
+    public const AT_MOST = 'at_most';
+
+    /**
      * @var string Check the value has not already been inputted in the database
      */
     public const UNIQUE = 'unique';
@@ -72,6 +82,11 @@ class Validate {
     public const NUMERIC = 'numeric';
 
     /**
+     * @var string Check that the value is in of a set of values
+     */
+    public const IN = 'in';
+
+    /**
      * @var string Check that the value matches a regex pattern
      */
     public const REGEX = 'regex';
@@ -80,6 +95,11 @@ class Validate {
      * @var string Check that the value does not start with a pattern
      */
     public const NOT_START_WITH = 'not_start_with';
+
+    /**
+     * @var string Set a rate limit
+     */
+    public const RATE_LIMIT = 'rate_limit';
 
     private DB $_db;
 
@@ -95,7 +115,7 @@ class Validate {
     private function __construct() {
         // Connect to database for rules which need DB access
         try {
-            $host = Config::get('mysql/host');
+            $host = Config::get('mysql.host');
         } catch (Exception $e) {
             $host = null;
         }
@@ -112,6 +132,7 @@ class Validate {
      * @param array $items subset of inputs to be validated
      *
      * @return Validate New instance of Validate.
+     * @throws Exception If provided configuration for a rule is invalid - not if a provided value is invalid!
      */
     public static function check(array $source, array $items = []): Validate {
         $validator = new Validate();
@@ -128,7 +149,7 @@ class Validate {
                 $item = Output::getClean($item);
 
                 // Required rule
-                if ($rule === self::REQUIRED ) {
+                if ($rule === self::REQUIRED) {
                     $missing = false;
                     // If the item is HTML array syntax, check if it exists within the subarray.
                     // Otherwise, check if it's empty.
@@ -200,16 +221,41 @@ class Validate {
                         }
                         break;
 
+                    case self::AT_LEAST:
+                        if (floatval($value) < $rule_value) {
+                            $validator->addError([
+                                'field' => $item,
+                                'rule' => self::AT_LEAST,
+                                'fallback' => "$item must have a value of at least $rule_value.",
+                                'meta' => ['min' => $rule_value],
+                            ]);
+                        }
+                        break;
+
+                    case self::AT_MOST:
+                        if (floatval($value) > $rule_value) {
+                            $validator->addError([
+                                'field' => $item,
+                                'rule' => self::AT_MOST,
+                                'fallback' => "$item must have a value of at most $rule_value.",
+                                'meta' => ['max' => $rule_value],
+                            ]);
+                        }
+                        break;
+
                     case self::UNIQUE:
                         if (is_array($rule_value)) {
                             $table = $rule_value[0];
                             [$ignore_col, $ignore_val] = explode(':', $rule_value[1]);
-                            $check = $validator->_db->query('SELECT * FROM nl2_' . $table . ' WHERE ? = ? AND ? <> ?', [
-                                $item,
-                                $value,
-                                $ignore_col,
-                                $ignore_val,
-                            ]);
+                            $sql =
+                                <<<SQL
+                                SELECT *
+                                FROM nl2_$table
+                                WHERE $item = ?
+                                  AND $ignore_col <> ?
+                                SQL;
+
+                            $check = $validator->_db->query($sql, [$value, $ignore_val]);
                         } else {
                             $table = $rule_value;
                             $check = $validator->_db->get($table, [$item, $value]);
@@ -318,6 +364,63 @@ class Validate {
                             break;
                         }
                         break;
+
+                    case self::IN:
+                        $values = is_string($rule_value) ? [$rule_value] : $rule_value;
+                        if (!in_array($value, $values)) {
+                            $string_values = implode(', ', $values);
+                            $validator->addError([
+                                'field' => $item,
+                                'rule' => self::IN,
+                                'fallback' => "$item must be one of $string_values."
+                            ]);
+                        }
+                        break;
+
+                    case self::RATE_LIMIT:
+                        if (is_array($rule_value) && count($rule_value) === 2) {
+                            // If array treat as [limit, seconds]
+                            [$limit, $seconds] = $rule_value;
+                        } else if (is_int($rule_value)) {
+                            // If integer default seconds to 60
+                            [$limit, $seconds] = [$rule_value, 60];
+                        }
+
+                        if (!isset($limit) || !isset($seconds)) {
+                            throw new Exception('Invalid rate limit configuration');
+                        }
+
+                        $key = "rate_limit_{$item}";
+                        $session = $_SESSION[$key];
+                        $time = date('U');
+                        $limit_end = $time + $seconds;
+
+                        if (isset($session) && is_array($session) && count($session) === 2) {
+                            [$count, $expires] = $session;
+                            $diff = $expires - $time;
+
+                            if (++$count >= $limit && $diff > 0) {
+                                $validator->addError([
+                                    'field' => $item,
+                                    'rule' => self::RATE_LIMIT,
+                                    'fallback' => "$item has reached the rate limit which expires in $diff seconds.",
+                                    'meta' => ['expires' => $diff],
+                                ]);
+                                break;
+                            }
+
+                            if ($diff <= 0) {
+                                // Reset
+                                $_SESSION[$key] = [1, $limit_end];
+                                break;
+                            }
+
+                            $_SESSION[$key] = [$count, $expires];
+                        } else {
+                            $_SESSION[$key] = [1, $limit_end];
+                        }
+
+                        break;
                 }
             }
         }
@@ -379,11 +482,11 @@ class Validate {
         // Loop all errors to convert and get their custom messages
         foreach ($this->_to_convert as $error) {
 
-            $message = $this->getMessage($error['field'], $error['rule'], $error['fallback']);
+            $message = $this->getMessage($error['field'], $error['rule'], $error['fallback'], $error['meta']);
 
             // If there is no generic `message()` set or the translated message is not equal to generic message
             // we can continue without worrying about duplications
-            if ($this->_message == null || ($message != $this->_message && !in_array($message, $this->_errors))) {
+            if ($this->_message === null || ($message != $this->_message && !in_array($message, $this->_errors))) {
                 $this->_errors[] = $message;
                 continue;
             }
@@ -409,10 +512,11 @@ class Validate {
      * @param string $field name of field to search for.
      * @param string $rule rule which check failed. should be from the constants defined above.
      * @param string $fallback fallback default message if custom message and generic message are not supplied.
+     * @param ?array $meta optional meta to provide to message.
      *
      * @return string Message for this field and rule.
      */
-    private function getMessage(string $field, string $rule, string $fallback): string {
+    private function getMessage(string $field, string $rule, string $fallback, ?array $meta = []): string {
 
         // No custom messages defined for this field
         if (!isset($this->_messages[$field])) {
@@ -434,6 +538,11 @@ class Validate {
         // Array of custom messages supplied, but none of their rules matches this rule
         if (!array_key_exists($rule, $this->_messages[$field])) {
             return $this->_message ?? $fallback;
+        }
+
+        // If the message is a callback function, provide it with meta
+        if (is_callable($this->_messages[$field][$rule])) {
+            return $this->_messages[$field][$rule]($meta);
         }
 
         // Rule-specific custom message was supplied

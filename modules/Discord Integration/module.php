@@ -9,33 +9,32 @@ class Discord_Module extends Module {
 
         $name = 'Discord Integration';
         $author = '<a href="https://tadhg.sh" target="_blank" rel="nofollow noopener">Aberdeener</a>';
-        $module_version = '2.0.0-pr13';
-        $nameless_version = '2.0.0-pr13';
+        $module_version = '2.1.3';
+        $nameless_version = '2.1.3';
 
         parent::__construct($this, $name, $author, $module_version, $nameless_version);
 
         $bot_url = Util::getSetting('discord_bot_url');
-        if ($bot_url == null) {
+        if ($bot_url === null) {
             $bot_url = '';
         }
         define('BOT_URL', $bot_url);
 
         $bot_username = Util::getSetting('discord_bot_username');
-        if ($bot_username == null) {
+        if ($bot_username === null) {
             $bot_username = '';
         }
         define('BOT_USERNAME', $bot_username);
 
         $pages->add($this->getName(), '/panel/discord', 'pages/panel/discord.php');
 
-        require_once(ROOT_PATH . "/modules/{$this->getName()}/hooks/DiscordHook.php");
-
         $endpoints->loadEndpoints(ROOT_PATH . '/modules/Discord Integration/includes/endpoints');
+
+        // -- Events
+        EventHandler::registerEvent(DiscordWebhookFormatterEvent::class);
 
         GroupSyncManager::getInstance()->registerInjector(new DiscordGroupSyncInjector);
 
-        // Discord Integration
-        require_once(ROOT_PATH . "/modules/{$this->getName()}/classes/DiscordIntegration.php");
         Integrations::getInstance()->registerIntegration(new DiscordIntegration($language));
     }
 
@@ -56,8 +55,7 @@ class Discord_Module extends Module {
             'admincp.discord' => $this->_language->get('admin', 'integrations') . ' &raquo; ' . Discord::getLanguageTerm('discord'),
         ]);
 
-        if (defined('FRONT_END') || (defined('PANEL_PAGE') && str_contains(PANEL_PAGE, 'widget'))) {
-            require_once(ROOT_PATH . "/modules/{$this->getName()}/widgets/DiscordWidget.php");
+        if ($pages->getActivePage()['widgets'] || (defined('PANEL_PAGE') && str_contains(PANEL_PAGE, 'widget'))) {
             $widgets->add(new DiscordWidget($cache, $smarty));
         }
 

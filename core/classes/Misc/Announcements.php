@@ -4,7 +4,7 @@
  *
  * @package NamelessMC\Misc
  * @author Aberdeener
- * @version 2.0.0-pr12
+ * @version 2.1.0
  * @license MIT
  */
 class Announcements {
@@ -183,12 +183,11 @@ class Announcements {
 
         $this->resetCache();
 
-        EventHandler::executeEvent('createAnnouncement', [
-            'announcement_id' => DB::getInstance()->lastId(),
-            'created_by' => $user->data()->id,
-            'header' => $header,
-            'message' => $message,
-        ]);
+        EventHandler::executeEvent(new AnnouncementCreatedEvent(
+            $user,
+            $header,
+            $message,
+        ));
 
         return true;
     }

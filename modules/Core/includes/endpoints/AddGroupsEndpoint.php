@@ -17,21 +17,19 @@ class AddGroupsEndpoint extends KeyAuthEndpoint {
 
     public function execute(Nameless2API $api, User $user): void {
         $groups = $_POST['groups'];
-        if ($groups == null || !count($groups)) {
+        if ($groups === null || !count($groups)) {
             $api->throwError(CoreApiErrors::ERROR_UNABLE_TO_FIND_GROUP, 'No groups provided');
         }
 
         $log_array = [];
-        $added_groups = [];
-        foreach ($groups as $group) {
-            $group_query = $api->getDb()->get('groups', ['id', $group]);
+        foreach ($groups as $group_id) {
+            $group_query = $api->getDb()->get('groups', ['id', $group_id]);
             if (!$group_query->count()) {
                 continue;
             }
             $group_query = $group_query->first();
 
-            if ($user->addGroup($group, 0, $group_query)) {
-                $added_groups[] = $group;
+            if ($user->addGroup($group_id)) {
                 $log_array['added'][] = $group_query->name;
             }
         }
@@ -39,7 +37,7 @@ class AddGroupsEndpoint extends KeyAuthEndpoint {
         GroupSyncManager::getInstance()->broadcastChange(
             $user,
             NamelessMCGroupSyncInjector::class,
-            $added_groups
+            $user->getAllGroupIds(),
         );
 
         $api->returnArray(array_merge(['message' => $api->getLanguage()->get('api', 'group_updated')], $log_array));

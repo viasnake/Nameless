@@ -150,6 +150,20 @@ foreach (Integrations::getInstance()->getAll() as $integration) {
     ];
 }
 
+$oauth_providers = [];
+$providers_available = array_keys(NamelessOAuth::getInstance()->getProvidersAvailable());
+foreach (NamelessOAuth::getInstance()->getProviders() as $provider_name => $data) {
+    $oauth_providers[$provider_name] = [
+        'provider_name' => $provider_name,
+        'module' => $data['module'],
+        'class' => $data['class'],
+        'user_id_name' => $data['user_id_name'],
+        'scope_id_name' => $data['scope_id_name'],
+        'enabled' => in_array($provider_name, $providers_available),
+        'client_id' => NamelessOAuth::getInstance()->getCredentials($provider_name)[0],
+    ];
+}
+
 $namelessmc_version = Util::getSetting('nameless_version');
 
 $uuid = DB::getInstance()->query('SELECT identifier FROM nl2_users_integrations INNER JOIN nl2_integrations on integration_id=nl2_integrations.id WHERE name = \'Minecraft\' AND user_id = ?;', [$user->data()->id]);
@@ -165,10 +179,31 @@ foreach (['fatal', 'warning', 'notice', 'other', 'custom'] as $type) {
     $logs[$type] = file_exists($file_path) ? Util::readFileEnd($file_path, $max_bytes = 10_000) : '';
 }
 
+$user_data = [];
+if ($user->isLoggedIn()) {
+    $user_integrations = [];
+    foreach ($user->getIntegrations() as $integrationUser) {
+        $user_integrations[$integrationUser->getIntegration()->getName()] = [
+            'username' => $integrationUser->data()->username,
+            'identifier' => $integrationUser->data()->identifier,
+            'verified' => $integrationUser->data()->verified
+        ];
+    }
+
+    $user_data = [
+        'id' => (int) $user->data()->id,
+        'username' => $user->data()->username,
+        'nickname' => $user->getDisplayname(),
+        'groups' => array_values($user->getAllGroupIds()),
+        'integrations' => $user_integrations
+    ];
+}
+
 $data = [
     'generated_at' => time(),
     'generated_by_name' => $user->data()->username,
     'generated_by_uuid' => $uuid,
+    'user' => $user_data,
     'namelessmc' => [
         'version' => $namelessmc_version,
         'update_available' => Util::getSetting('version_update') === 'urgent' || Util::getSetting('version_update') === 'true',
@@ -188,13 +223,13 @@ $data = [
                 'hooks' => $webhooks,
                 'forum_hooks' => $forum_hooks,
             ],
-            'trusted_proxies' => Util::getTrustedProxies(),
+            'trusted_proxies' => HttpUtils::getTrustedProxies(),
         ],
         'groups' => $groups,
         'config' => [
             'core' => array_filter(
-                $GLOBALS['config']['core'],
-                static fn(string $key) => $key != 'hostname' && $key != 'trustedProxies',
+                Config::get('core'),
+                static fn(string $key) => $key !== 'hostname' && $key !== 'trustedProxies',
                 ARRAY_FILTER_USE_KEY
             ),
         ],
@@ -204,6 +239,7 @@ $data = [
             'panel' => $namelessmc_panel_templates,
         ],
         'integrations' => $integrations,
+        'oauth_providers' => $oauth_providers,
     ],
     'logs' => [
         'fatal' => $logs['fatal'],

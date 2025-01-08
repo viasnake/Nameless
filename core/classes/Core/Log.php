@@ -41,6 +41,10 @@ class Log extends Instanceable {
                 ],
                 'social' => 'acp_social_update',
                 'term' => 'acp_term_update',
+                'queue' => [
+                    'cancel_task' => 'acp_cancel_task',
+                    'requeue_task' => 'acp_requeue_task',
+                ],
             ],
             'api' => [
                 'change' => 'acp_api_change',
@@ -167,8 +171,8 @@ class Log extends Instanceable {
             // TODO
         ],
         'discord' => [
+            'bot_request_failed' => 'discord_bot_request_failed',
             'role_set' => 'discord_role_set',
-            'upon_validation_error' => 'upon_validation_error'
         ],
         'mc_group_sync' => [
             'role_set' => 'mc_group_sync_set'
@@ -209,18 +213,18 @@ class Log extends Instanceable {
      * @return bool Return true or false if inserted into the database.
      */
     public function log(string $action, string $info = '', ?int $user = null): bool {
-        if ($user == null) {
+        if ($user === null) {
             $userTemp = new User();
             $user = ($userTemp->isLoggedIn() ? $userTemp->data()->id : 0);
         }
 
-        $ip = Util::getRemoteAddress();
+        $ip = HttpUtils::getRemoteAddress();
 
         return $this->_db->insert('logs', [
             'time' => date('U'),
             'action' => $action,
             'user_id' => $user,
-            'ip' => $ip,
+            'ip' => $ip ?? 'unknown',
             'info' => $info,
         ]);
     }

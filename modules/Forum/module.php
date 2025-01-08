@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr12
+ *  NamelessMC version 2.1.2
  *
  *  License: MIT
  *
@@ -20,8 +20,8 @@ class Forum_Module extends Module {
 
         $name = 'Forum';
         $author = '<a href="https://samerton.me" target="_blank" rel="nofollow noopener">Samerton</a>';
-        $module_version = '2.0.0-pr13';
-        $nameless_version = '2.0.0-pr13';
+        $module_version = '2.1.3';
+        $nameless_version = '2.1.3';
 
         parent::__construct($this, $name, $author, $module_version, $nameless_version);
 
@@ -55,21 +55,14 @@ class Forum_Module extends Module {
         $pages->add('Forum', '/forum/view_topic', 'pages/forum/redirect.php');
         $pages->add('Forum', '/forum/view_forum', 'pages/forum/redirect.php');
 
-        // Hooks
-        EventHandler::registerEvent('newTopic',
-            $this->_forum_language->get('forum', 'new_topic_hook_info'),
-            [
-                'user_id' => $this->_language->get('admin', 'user_id'),
-                'username' => $this->_language->get('user', 'username'),
-                'nickname' => $this->_language->get('user', 'nickname'),
-                'content' => $this->_language->get('general', 'content'),
-                'content_full' => $this->_language->get('general', 'full_content'),
-                'avatar_url' => $this->_language->get('user', 'avatar'),
-                'title' => $this->_forum_language->get('forum', 'topic_title'),
-                'url' => $this->_language->get('general', 'url'),
-                'available_hooks' => $this->_forum_language->get('forum', 'available_hooks')
-            ]
-        );
+        EventHandler::registerListener(UserDeletedEvent::class, DeleteUserForumHook::class);
+        EventHandler::registerListener(GroupClonedEvent::class, CloneGroupForumHook::class);
+
+        // -- Events
+        EventHandler::registerEvent(TopicCreatedEvent::class);
+        EventHandler::registerEvent(TopicReplyCreatedEvent::class);
+
+        // -- Pipelines
 
         EventHandler::registerEvent('prePostCreate',
             $this->_forum_language->get('forum', 'pre_post_create_hook_info'),
@@ -138,50 +131,41 @@ class Forum_Module extends Module {
             true
         );
 
-        EventHandler::registerEvent('topicReply',
-            $this->_forum_language->get('forum', 'topic_reply'),
-            [
-                'user_id' => $this->_language->get('admin', 'user_id'),
-                'username' => $this->_language->get('user', 'username'),
-                'nickname' => $this->_language->get('user', 'nickname'),
-                'content' => $this->_language->get('general', 'content'),
-                'content_full' => $this->_language->get('general', 'full_content'),
-                'avatar_url' => $this->_language->get('user', 'avatar'),
-                'title' => $this->_forum_language->get('forum', 'topic_title'),
-                'url' => $this->_language->get('general', 'url'),
-                'topic_author_user_id' => $this->_forum_language->get('forum', 'topic_author_uuid'),
-                'topic_author_username' => $this->_forum_language->get('forum', 'topic_author_username'),
-                'topic_author_nickname' => $this->_forum_language->get('forum', 'topic_author_nickname'),
-                'topic_id' => $this->_forum_language->get('forum', 'topic_id'),
-                'post_id' => $this->_forum_language->get('forum', 'post_id'),
-            ]
-        );
-
-        require_once ROOT_PATH . '/modules/Forum/hooks/DeleteUserForumHook.php';
-        EventHandler::registerListener('deleteUser', 'DeleteUserForumHook::execute');
-
-        require_once ROOT_PATH . '/modules/Core/hooks/ContentHook.php';
-        require_once ROOT_PATH . '/modules/Forum/hooks/MentionsHook.php';
-
         EventHandler::registerListener('prePostCreate', 'MentionsHook::preCreate');
         EventHandler::registerListener('prePostEdit', 'MentionsHook::preEdit');
         EventHandler::registerListener('preTopicCreate', 'MentionsHook::preCreate');
         EventHandler::registerListener('preTopicEdit', 'MentionsHook::preEdit');
 
         EventHandler::registerListener('renderPost', 'ContentHook::purify');
-        EventHandler::registerListener('renderPost', 'ContentHook::codeTransform', false, 15);
-        EventHandler::registerListener('renderPost', 'ContentHook::decode', false, 20);
-        EventHandler::registerListener('renderPost', 'ContentHook::renderEmojis', false, 10);
-        EventHandler::registerListener('renderPost', 'ContentHook::replaceAnchors', false, 15);
-        EventHandler::registerListener('renderPost', 'MentionsHook::parsePost', false, 5);
+        EventHandler::registerListener('renderPost', 'ContentHook::renderEmojis', 10);
+        EventHandler::registerListener('renderPost', 'ContentHook::replaceAnchors', 5);
+        EventHandler::registerListener('renderPost', 'MentionsHook::parsePost', 5);
 
         EventHandler::registerListener('renderPostEdit', 'ContentHook::purify');
-        EventHandler::registerListener('renderPostEdit', 'ContentHook::codeTransform', false, 15);
-        EventHandler::registerListener('renderPostEdit', 'ContentHook::decode', false, 20);
-        EventHandler::registerListener('renderPostEdit', 'ContentHook::replaceAnchors', false, 15);
+        EventHandler::registerListener('renderPostEdit', 'ContentHook::replaceAnchors', 15);
 
-        require_once(ROOT_PATH . '/modules/Forum/hooks/CloneGroupForumHook.php');
-        EventHandler::registerListener('cloneGroup', 'CloneGroupForumHook::execute');
+        MemberListManager::getInstance()->registerListProvider(new MostPostsMemberListProvider($forum_language));
+        MemberListManager::getInstance()->registerListProvider(new HighestReactionScoresMemberListProvider($forum_language));
+
+        MemberListManager::getInstance()->registerMemberMetadataProvider(function (User $member) use ($forum_language) {
+            return [
+                $forum_language->get('forum', 'posts_title') =>
+                    DB::getInstance()->query(
+                        'SELECT COUNT(post_content) AS `count` FROM nl2_posts WHERE post_creator = ?',
+                        [$member->data()->id]
+                    )->first()->count,
+            ];
+        });
+
+        MemberListManager::getInstance()->registerMemberMetadataProvider(function (User $member) use ($forum_language) {
+            return [
+                $forum_language->get('forum', 'reaction_score') =>
+                    DB::getInstance()->query(
+                        'SELECT COUNT(fr.user_received) AS `count` FROM nl2_forums_reactions fr JOIN nl2_reactions r ON r.id = fr.reaction_id WHERE r.type = 2 AND fr.user_received = ?',
+                        [$member->data()->id]
+                    )->first()->count,
+            ];
+        });
     }
 
     public function onInstall() {
@@ -249,10 +233,9 @@ class Forum_Module extends Module {
         }
 
         // Widgets
-        if (defined('FRONT_END') || (defined('PANEL_PAGE') && str_contains(PANEL_PAGE, 'widget'))) {
+        if ($pages->getActivePage()['widgets'] || (defined('PANEL_PAGE') && str_contains(PANEL_PAGE, 'widget'))) {
             // Latest posts
-            require_once(ROOT_PATH . '/modules/Forum/widgets/LatestPostsWidget.php');
-            $widgets->add(new LatestPostsWidget($this->_forum_language->get('forum', 'latest_posts'), $this->_forum_language->get('forum', 'by'), $smarty, $cache, $user, $this->_language));
+            $widgets->add(new LatestPostsWidget($this->_forum_language, $smarty, $cache, $user, $this->_language));
         }
 
         // Front end or back end?
@@ -325,75 +308,78 @@ class Forum_Module extends Module {
                     // Dashboard graph
 
                     // Get data for topics and posts
-                    $latest_topics = DB::getInstance()->orderWhere('topics', 'topic_date > ' . strtotime('-1 week'), 'topic_date', 'ASC')->results();
-                    $latest_posts = DB::getInstance()->orderWhere('posts', 'post_date > "' . date('Y-m-d G:i:s', strtotime('-1 week')) . '"', 'post_date', 'ASC')->results();
+                    $start_time = strtotime('7 days ago');
+                    $latest_topics = DB::getInstance()->query(
+                        <<<SQL
+                            SELECT DATE_FORMAT(FROM_UNIXTIME(`topic_date`), '%Y-%m-%d') d, COUNT(*) c
+                            FROM nl2_topics
+                            WHERE `topic_date` > ? AND `topic_date` < UNIX_TIMESTAMP()
+                            AND `deleted` = 0
+                            GROUP BY DATE_FORMAT(FROM_UNIXTIME(`topic_date`), '%Y-%m-%d')
+                        SQL,
+                        [$start_time],
+                    );
+                    $latest_topics_count = $latest_topics->count();
+                    $latest_topics = $latest_topics->results();
+
+                    $latest_posts = DB::getInstance()->query(
+                        <<<SQL
+                            SELECT DATE_FORMAT(FROM_UNIXTIME(`created`), '%Y-%m-%d') d, COUNT(*) c
+                            FROM nl2_posts
+                            WHERE `created` > ? AND `created` < UNIX_TIMESTAMP()
+                            AND `deleted` = 0
+                            GROUP BY DATE_FORMAT(FROM_UNIXTIME(`created`), '%Y-%m-%d')
+                        SQL,
+                        [$start_time],
+                    );
+                    $latest_posts_count = $latest_posts->count();
+                    $latest_posts = $latest_posts->results();
 
                     $cache->setCache('dashboard_graph');
                     if ($cache->isCached('forum_data')) {
-                        $output = $cache->retrieve('forum_data');
+                        $data = $cache->retrieve('forum_data');
 
                     } else {
-                        $output = [];
+                        $data = [];
 
-                        $output['datasets']['topics']['label'] = 'forum_language/forum/topics_title'; // for $forum_language->get('forum', 'topics_title');
-                        $output['datasets']['topics']['colour'] = '#00931D';
-                        $output['datasets']['posts']['label'] = 'forum_language/forum/posts_title'; // for $forum_language->get('forum', 'posts_title');
-                        $output['datasets']['posts']['colour'] = '#ffde0a';
+                        $data['datasets']['topics']['label'] = 'forum_language/forum/topics_title'; // for $forum_language->get('forum', 'topics_title');
+                        $data['datasets']['topics']['colour'] = '#00931D';
+                        $data['datasets']['posts']['label'] = 'forum_language/forum/posts_title'; // for $forum_language->get('forum', 'posts_title');
+                        $data['datasets']['posts']['colour'] = '#ffde0a';
 
-                        foreach ($latest_topics as $topic) {
-                            $date = date('d M Y', $topic->topic_date);
-                            $date = '_' . strtotime($date);
-
-                            if (isset($output[$date]['topics'])) {
-                                $output[$date]['topics'] += 1;
-                            } else {
-                                $output[$date]['topics'] = 1;
+                        if (count($latest_topics)) {
+                            foreach ($latest_topics as $day) {
+                                $data['_' . $day->d] = ['topics' => $day->c];
                             }
                         }
 
-                        foreach ($latest_posts as $post) {
-                            $date = date('d M Y', strtotime($post->post_date));
-                            $date = '_' . strtotime($date);
-
-                            if (isset($output[$date]['posts'])) {
-                                $output[$date]['posts'] += 1;
-                            } else {
-                                $output[$date]['posts'] = 1;
+                        if (count($latest_posts)) {
+                            foreach ($latest_posts as $day) {
+                                if (isset($data['_' . $day->d])) {
+                                    $data['_' . $day->d]['posts'] = $day->c;
+                                } else {
+                                    $data['_' . $day->d] = ['posts' => $day->c];
+                                }
                             }
                         }
 
-                        // Fill in missing dates, set topics/posts to 0
-                        $start = strtotime('-1 week');
-                        $start = date('d M Y', $start);
-                        $start = strtotime($start);
-                        $end = strtotime(date('d M Y'));
-                        while ($start <= $end) {
-                            if (!isset($output['_' . $start]['topics'])) {
-                                $output['_' . $start]['topics'] = 0;
-                            }
-
-                            if (!isset($output['_' . $start]['posts'])) {
-                                $output['_' . $start]['posts'] = 0;
-                            }
-
-                            $start = strtotime('+1 day', $start);
-                        }
+                        $data = Core_Module::fillMissingGraphDays($data, 'topics');
+                        $data = Core_Module::fillMissingGraphDays($data, 'posts');
 
                         // Sort by date
-                        ksort($output);
+                        ksort($data);
 
-                        $cache->store('forum_data', $output, 120);
-
+                        $cache->store('forum_data', $data, 120);
                     }
 
-                    Core_Module::addDataToDashboardGraph($this->_language->get('admin', 'overview'), $output);
+                    Core_Module::addDataToDashboardGraph($this->_language->get('admin', 'overview'), $data);
 
                     // Dashboard stats
                     require_once(ROOT_PATH . '/modules/Forum/collections/panel/RecentTopics.php');
-                    CollectionManager::addItemToCollection('dashboard_stats', new RecentTopicsItem($smarty, $this->_forum_language, $cache, count($latest_topics)));
+                    CollectionManager::addItemToCollection('dashboard_stats', new RecentTopicsItem($smarty, $this->_forum_language, $cache, $latest_topics_count));
 
                     require_once(ROOT_PATH . '/modules/Forum/collections/panel/RecentPosts.php');
-                    CollectionManager::addItemToCollection('dashboard_stats', new RecentPostsItem($smarty, $this->_forum_language, $cache, count($latest_posts)));
+                    CollectionManager::addItemToCollection('dashboard_stats', new RecentPostsItem($smarty, $this->_forum_language, $cache, $latest_posts_count));
 
                 }
             }

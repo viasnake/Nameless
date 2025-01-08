@@ -1,51 +1,70 @@
 <?php
-/*
- *  Made by Samerton
- *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0
+/**
+ * Discord webhook handler class
  *
- *  Discord webhook handler class
+ * @package NamelessMC\Events
+ * @author Samerton
+ * @version 2.2.0
+ * @license MIT
  */
+class DiscordHook implements WebhookDispatcher {
 
-class DiscordHook {
+    public static function execute($event, string $webhook_url = ''): void {
+        $params = $event instanceof AbstractEvent
+            ? $event->params()
+            : $event;
 
-    public static function execute(array $params = []): void {
-        // Ensure hook is compatible
-        $return = [];
-        if ($params['event'] == 'registerUser') {
-            $return['username'] = SITE_NAME;
-            $return['content'] = '';
-            $return['embeds'] = [[
-                'author' => [
-                    'name' => Output::getClean($params['username']),
-                    'url' => $params['url'],
-                    'icon_url' => $params['avatar_url']
-                ],
-                'description' => $params['language']->get('user', 'user_x_has_registered', ['user' => Output::getClean($params['username']), 'siteName' => SITE_NAME])
-            ]];
-        } else {
-            $content = html_entity_decode(str_replace(['&nbsp;', '&bull;'], [' ', ''], $params['content_full']));
-            if (mb_strlen($content) > 512) {
-                $content = mb_substr($content, 0, 512) . '...';
-            }
+        $webhook_url = $event instanceof AbstractEvent
+            ? $webhook_url
+            : $params['webhook'];
 
-            $return['username'] = $params['username'] . ' | ' . SITE_NAME;
-            $return['avatar_url'] = $params['avatar_url'];
-            $return['embeds'] = [[
-                'description' => $content,
-                'title' => $params['title'],
-                'url' => $params['url'],
-                'footer' => ['text' => $params['content']]
-            ]];
+        $name = $event instanceof AbstractEvent
+            ? $event::name()
+            : $params['event'];
+
+        $format = $event instanceof DiscordDispatchable
+            ? $event->toDiscordWebhook()
+            : [];
+
+        $return = EventHandler::executeEvent(new DiscordWebhookFormatterEvent(
+            $name,
+            $format,
+            $params,
+        ))['format'];
+
+        if (is_array($return) && isset($return['webhook'])) {
+            unset($return['webhook']);
         }
 
-        if (isset($params['color'])) {
-            $return['embeds'][0]['color'] = hexdec($params['color']);
+        if ($return instanceof DiscordWebhookBuilder) {
+            $return = $return->toArray();
+        }
+
+        if (!is_array($return) || !count($return)) {
+            try {
+                // Create generic fallback embed if no embeds are provided
+                $return = DiscordWebhookBuilder::make()
+                    ->setUsername($params['username'] . ' | ' . SITE_NAME)
+                    ->setAvatarUrl($params['avatar_url'])
+                    ->addEmbed(function (DiscordEmbed $embed) use ($params) {
+                        return $embed
+                            ->setTitle($params['title'])
+                            ->setDescription(Text::embedSafe($params['content_full']))
+                            ->setUrl($params['url'])
+                            ->setFooter(Text::embedSafe($params['content']));
+                    })
+                    ->toArray();
+            } catch (Exception $exception) {
+                // Likely enabled discord webhook for event
+                // that doesn't have valid fallback params
+                ErrorHandler::logWarning("Error creating fallback Discord embed for {$event::name()}: {$exception->getMessage()}. Does it support embeds?");
+                return;
+            }
         }
 
         $json = json_encode($return, JSON_UNESCAPED_SLASHES);
 
-        $httpClient = HttpClient::post($params['webhook'], $json, [
+        $httpClient = HttpClient::post($webhook_url, $json, [
             'headers' => [
                 'Content-Type' => 'application/json',
             ],

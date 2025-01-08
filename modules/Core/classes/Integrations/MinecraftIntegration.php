@@ -4,7 +4,7 @@
  *
  * @package Modules\Core\Integrations
  * @author Partydragen
- * @version 2.0.0-pr13
+ * @version 2.1.0
  * @license MIT
  */
 class MinecraftIntegration extends IntegrationBase {
@@ -16,8 +16,15 @@ class MinecraftIntegration extends IntegrationBase {
         $this->_name = 'Minecraft';
         $this->_icon = 'fas fa-cubes';
         $this->_language = $language;
+        $this->_settings = ROOT_PATH . '/modules/Core/includes/admin_integrations/minecraft.php';
 
         parent::__construct();
+    }
+
+    private function flashVerifyCommand(string $verification_code): void {
+        $verification_command = Output::getClean(Util::getSetting('minecraft_verify_command', '/verify'));
+        $message = $this->_language->get('user', 'validate_account_command', ['command' => $verification_command . ' ' . $verification_code]);
+        Session::flash('connections_success', $message);
     }
 
     public function onLinkRequest(User $user) {
@@ -44,13 +51,22 @@ class MinecraftIntegration extends IntegrationBase {
         $integrationUser = new IntegrationUser($this);
         $integrationUser->linkIntegration($user, $this->_uuid, $username, false, $code);
 
-        Session::flash('connections_success', $this->_language->get('user', 'validate_account_command', ['command' => Output::getClean('/verify ' . $code)]));
+        $this->flashVerifyCommand($code);
     }
 
     public function onVerifyRequest(User $user) {
         $integrationUser = new IntegrationUser($this, $user->data()->id, 'user_id');
 
-        Session::flash('connections_success', $this->_language->get('user', 'validate_account_command', ['command' => Output::getClean('/verify ' . $integrationUser->data()->code)]));
+        $code = $integrationUser->data()->code;
+        if ($code === null) {
+            $code = SecureRandom::alphanumeric();
+
+            $integrationUser->update([
+                'code' => $code
+            ]);
+        }
+
+        $this->flashVerifyCommand($code);
     }
 
     public function onUnlinkRequest(User $user) {
@@ -129,6 +145,10 @@ class MinecraftIntegration extends IntegrationBase {
     }
 
     public function onRegistrationPageLoad(Fields $fields) {
+        if (Util::getSetting('mc_username_registration', '1', 'Minecraft Integration') != '1') {
+            return;
+        }
+
         $username_value = ((isset($_POST['username']) && $_POST['username']) ? Output::getClean(Input::get('username')) : '');
 
         $fields->add('username', Fields::TEXT, $this->_language->get('user', 'minecraft_username'), true, $username_value, null, null, 1);
@@ -139,6 +159,10 @@ class MinecraftIntegration extends IntegrationBase {
     }
 
     public function afterRegistrationValidation() {
+        if (Util::getSetting('mc_username_registration', '1', 'Minecraft Integration') != '1') {
+            return;
+        }
+
         $username = Input::get('username');
 
         // Validate username
@@ -160,6 +184,10 @@ class MinecraftIntegration extends IntegrationBase {
     }
 
     public function successfulRegistration(User $user) {
+        if (Util::getSetting('mc_username_registration', '1', 'Minecraft Integration') != '1') {
+            return;
+        }
+
         $code = SecureRandom::alphanumeric();
 
         $integrationUser = new IntegrationUser($this);
@@ -194,9 +222,9 @@ class MinecraftIntegration extends IntegrationBase {
     public function getUuidByUsername(string $username): array {
         if (Util::getSetting('uuid_linking')) {
             return $this->getOnlineModeUuid($username);
-        } else {
-            return $this->getOfflineModeUuid($username);
         }
+
+        return ProfileUtils::getOfflineModeUuid($username);
     }
 
     /**
@@ -211,34 +239,15 @@ class MinecraftIntegration extends IntegrationBase {
         $mcname_result = $profile ? $profile->getProfileAsArray() : [];
         if (isset($mcname_result['username'], $mcname_result['uuid']) && !empty($mcname_result['username']) && !empty($mcname_result['uuid'])) {
             // Valid
-            $result = [
+            return [
                 'uuid' => $mcname_result['uuid'],
                 'username' => $mcname_result['username']
             ];
-
-            return $result;
-        } else {
-            // Invalid
-            $this->addError($this->_language->get('user', 'invalid_mcname'));
         }
 
+        // Invalid
+        $this->addError($this->_language->get('user', 'invalid_mcname'));
+
         return [];
-    }
-
-    /**
-     * Generate an offline minecraft UUID v3 based on the case sensitive player name.
-     *
-     * @param string $username
-     * @return array
-     */
-    public function getOfflineModeUuid(string $username): array {
-        $data = hex2bin(md5("OfflinePlayer:" . $username));
-        $data[6] = chr(ord($data[6]) & 0x0f | 0x30);
-        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
-
-        return [
-            'uuid' => bin2hex($data),
-            'username' => $username
-        ];
     }
 }

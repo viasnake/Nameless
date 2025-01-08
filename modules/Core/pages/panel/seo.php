@@ -41,7 +41,7 @@ if (!isset($_GET['metadata'])) {
         if (Token::check(Input::get('token'))) {
             if (Input::get('type') == 'sitemap') {
 
-                $sitemap = new \SitemapPHP\Sitemap(rtrim(Util::getSelfURL(), '/'));
+                $sitemap = new \SitemapPHP\Sitemap(rtrim(URL::getSelfURL(), '/'));
                 $sitemap->setPath(ROOT_PATH . '/cache/sitemaps/');
 
                 $methods = $pages->getSitemapMethods();
@@ -54,7 +54,7 @@ if (!isset($_GET['metadata'])) {
                     $method($sitemap, $cache);
                 }
 
-                $sitemap->createSitemapIndex(rtrim(Util::getSelfURL(), '/') . (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/cache/sitemaps/');
+                $sitemap->createSitemapIndex(rtrim(URL::getSelfURL(), '/') . (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/cache/sitemaps/');
 
                 $cache->setCache('sitemap_cache');
                 $cache->store('updated', date(DATE_FORMAT));
@@ -85,10 +85,10 @@ if (!isset($_GET['metadata'])) {
 
             $smarty->assign([
                 'SITEMAP_LAST_GENERATED' => $language->get('admin', 'sitemap_last_generated_x', [
-                    'generatedAt' => Util::bold($updated)
+                    'generatedAt' => Text::bold($updated)
                 ]),
                 'SITEMAP_LINK' => (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/cache/sitemaps/sitemap-index.xml',
-                'SITEMAP_FULL_LINK' => rtrim(Util::getSelfURL(), '/') . (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/cache/sitemaps/sitemap-index.xml',
+                'SITEMAP_FULL_LINK' => rtrim(URL::getSelfURL(), '/') . (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/cache/sitemaps/sitemap-index.xml',
                 'DOWNLOAD_SITEMAP' => $language->get('admin', 'download_sitemap'),
                 'LINK' => $language->get('admin', 'sitemap_link')
             ]);
@@ -105,9 +105,13 @@ if (!isset($_GET['metadata'])) {
         Redirect::to(URL::build('/panel/core/seo'));
     }
 
+    $template->assets()->include(
+        AssetTree::IMAGE_PICKER,
+    );
+
     $page_metadata = DB::getInstance()->get('page_descriptions', ['page', $page['key']])->results();
     if (Input::exists()) {
-        if (Token::check(Input::get('token'))) {
+        if (Token::check()) {
             if (isset($_POST['description'])) {
                 if (strlen($_POST['description']) > 500) {
                     $errors[] = $language->get('admin', 'description_max_500');
@@ -120,20 +124,28 @@ if (!isset($_GET['metadata'])) {
 
             $keywords = $_POST['keywords'] ?? null;
 
+            if (Input::get('inputImage')) {
+                $image_url = ((defined('CONFIG_PATH')) ? CONFIG_PATH . '/' : '/') . 'uploads/og_images/' . Input::get('inputImage');
+            } else {
+                $image_url = '';
+            }
+
             if (!count($errors)) {
                 if (count($page_metadata)) {
                     $page_id = $page_metadata[0]->id;
 
                     DB::getInstance()->update('page_descriptions', $page_id, [
                         'description' => $description,
-                        'tags' => $keywords
+                        'tags' => $keywords,
+                        'image' => $image_url,
                     ]);
 
                 } else {
                     DB::getInstance()->insert('page_descriptions', [
                         'page' => $page['key'],
                         'description' => $description,
-                        'tags' => $keywords
+                        'tags' => $keywords,
+                        'image' => $image_url,
                     ]);
                 }
 
@@ -150,21 +162,43 @@ if (!isset($_GET['metadata'])) {
     if (count($page_metadata)) {
         $description = Output::getClean($page_metadata[0]->description);
         $tags = Output::getClean($page_metadata[0]->tags);
+        $og_image = Output::getClean($page_metadata[0]->image);
     } else {
         $description = '';
         $tags = '';
+        $og_image = '';
+    }
+
+    $image_path = implode(DIRECTORY_SEPARATOR, [ROOT_PATH, 'uploads', 'og_images']);
+    $images = scandir($image_path);
+    $og_images = [];
+    $n = 1;
+    foreach ($images as $image) {
+        $ext = pathinfo($image, PATHINFO_EXTENSION);
+        if (!in_array($ext, ['png', 'jpg', 'jpeg'])) {
+            continue;
+        }
+        $og_images[] = [
+            'src' => (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/uploads/og_images/' . $image,
+            'value' => $image,
+            'selected' => ($og_image === (defined('CONFIG_PATH') ? CONFIG_PATH : '') . '/uploads/og_images/' . $image),
+            'n' => $n
+        ];
+        $n++;
     }
 
     $smarty->assign([
         'BACK' => $language->get('general', 'back'),
         'BACK_LINK' => URL::build('/panel/core/seo'),
         'EDITING_PAGE' => $language->get('admin', 'editing_page_x', [
-            'page' => Util::bold(Output::getClean($page['key']))
+            'page' => Text::bold(Output::getClean($page['key']))
         ]),
         'DESCRIPTION' => $language->get('admin', 'description'),
         'DESCRIPTION_VALUE' => $description,
         'KEYWORDS' => $language->get('admin', 'keywords'),
-        'KEYWORDS_VALUE' => $tags
+        'KEYWORDS_VALUE' => $tags,
+        'IMAGE' => $language->get('admin', 'image'),
+        'OG_IMAGES_ARRAY' => $og_images,
     ]);
 
     $template_file = 'core/seo_metadata_edit.tpl';

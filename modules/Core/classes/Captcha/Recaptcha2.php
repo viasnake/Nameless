@@ -29,14 +29,7 @@ class Recaptcha2 extends CaptchaBase {
     }
 
     public function validateSecret(string $secret) : bool {
-        $token = "Verification";
-        $url = 'https://www.google.com/recaptcha/api/siteverify';
-
-        $result = HttpClient::post($url, [
-            'secret' => $secret,
-            'response' => $token
-        ])->json(true);
-        return $result['error-codes'][0] !== 'invalid-input-secret';
+        return true;
     }
 
     public function validateKey(string $key) : bool {
@@ -44,7 +37,11 @@ class Recaptcha2 extends CaptchaBase {
     }
 
     public function getHtml(): string {
-        return '<div class="g-recaptcha" data-sitekey="' . $this->getPublicKey() . '"></div>';
+        if (defined('DARK_MODE') && DARK_MODE == 1) {
+            return '<div class="g-recaptcha" data-sitekey="' . $this->getPublicKey() . '" data-theme="dark"></div>';
+        } else {
+            return '<div class="g-recaptcha" data-sitekey="' . $this->getPublicKey() . '"></div>';
+        }
     }
 
     public function getJavascriptSource(): string {

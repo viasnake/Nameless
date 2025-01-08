@@ -70,7 +70,7 @@ if (!is_string($update_check)) {
             'INSTRUCTIONS' => $language->get('admin', 'instructions'),
             'INSTRUCTIONS_VALUE' => Output::getDecoded($update_check->instructions()),
             'UPGRADE_LINK' => URL::build('/panel/upgrade'),
-            'DOWNLOAD_LINK' => $update_check->gitHubLink(),
+            'DOWNLOAD_LINK' => $update_check->upgradeZipLink(),
             'DOWNLOAD' => $language->get('admin', 'download'),
             'INSTALL_CONFIRM' => $language->get('admin', 'install_confirm')
         ]);
@@ -79,15 +79,6 @@ if (!is_string($update_check)) {
     $smarty->assign([
         'UPDATE_CHECK_ERROR' => $update_check,
     ]);
-}
-
-// PHP version check
-if (PHP_VERSION_ID < 70400) {
-    $smarty->assign('PHP_WARNING', $language->get('admin', 'upgrade_php_version'));
-
-    if (NAMELESS_VERSION !== '2.0.0-pr11') {
-        $smarty->assign('PREVENT_UPGRADE', true);
-    }
 }
 
 $smarty->assign([

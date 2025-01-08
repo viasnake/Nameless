@@ -4,22 +4,21 @@ class DatabaseInitialiser {
 
     private DB $_db;
     private Cache $_cache;
-    private array $_config;
 
-    private function __construct(array $config = []) {
+    private function __construct() {
         $this->_db = DB::getInstance();
-        $this->_cache = new Cache();
-        $this->_config = $config;
+        $this->_cache = new Cache(['name' => 'nameless', 'extension' => '.cache', 'path' => ROOT_PATH . '/cache/']);
     }
 
-    public static function runPreUser(array $config) {
-        $instance = new self($config);
+    public static function runPreUser() {
+        $instance = new self();
         $instance->initialiseGroups();
         $instance->initialiseLanguages();
         $instance->initialiseModules();
         $instance->initialiseIntegrations();
         $instance->initialiseReactions();
         $instance->initialiseSettings();
+        $instance->initialiseTasks();
         $instance->initialiseTemplates();
         $instance->initialiseWidgets();
     }
@@ -34,7 +33,6 @@ class DatabaseInitialiser {
             'name' => 'Member',
             'group_html' => '<span class="badge badge-success">Member</span>',
             'permissions' => '{"usercp.messaging":1,"usercp.signature":1,"usercp.nickname":1,"usercp.private_profile":1,"usercp.profile_banner":1}',
-            'default_group' => true,
             'order' => 3
         ]);
 
@@ -44,7 +42,7 @@ class DatabaseInitialiser {
             'group_username_color' => '#ff0000',
             'group_username_css' => '',
             'admin_cp' => true,
-            'permissions' => '{"administrator":1,"admincp.core":1,"admincp.core.api":1,"admincp.core.seo":1,"admincp.core.general":1,"admincp.core.avatars":1,"admincp.core.fields":1,"admincp.core.debugging":1,"admincp.core.emails":1,"admincp.core.navigation":1,"admincp.core.announcements":1,"admincp.core.reactions":1,"admincp.core.registration":1,"admincp.core.social_media":1,"admincp.core.terms":1,"admincp.errors":1,"admincp.core.placeholders":1,"admincp.integrations":1,"admincp.integrations.edit":1,"admincp.discord":1,"admincp.minecraft":1,"admincp.minecraft.authme":1,"admincp.minecraft.verification":1,"admincp.minecraft.servers":1,"admincp.minecraft.query_errors":1,"admincp.minecraft.banners":1,"admincp.modules":1,"admincp.pages":1,"admincp.security":1,"admincp.security.acp_logins":1,"admincp.security.template":1,"admincp.styles":1,"admincp.styles.panel_templates":1,"admincp.styles.templates":1,"admincp.styles.templates.edit":1,"admincp.styles.images":1,"admincp.update":1,"admincp.users":1,"admincp.users.edit":1,"admincp.groups":1,"admincp.groups.self":1,"admincp.widgets":1,"modcp.ip_lookup":1,"modcp.punishments":1,"modcp.punishments.warn":1,"modcp.punishments.ban":1,"modcp.punishments.banip":1,"modcp.punishments.revoke":1,"modcp.reports":1,"modcp.profile_banner_reset":1,"usercp.messaging":1,"usercp.signature":1,"admincp.forums":1,"usercp.private_profile":1,"usercp.nickname":1,"usercp.profile_banner":1,"profile.private.bypass":1, "admincp.security.all":1,"admincp.core.hooks":1,"admincp.security.group_sync":1,"admincp.core.emails_mass_message":1,"modcp.punishments.reset_avatar":1,"usercp.gif_avatar":1}',
+            'permissions' => '{"administrator":1,"admincp.core":1,"admincp.core.api":1,"admincp.core.seo":1,"admincp.core.general":1,"admincp.core.avatars":1,"admincp.core.fields":1,"admincp.core.debugging":1,"admincp.core.emails":1,"admincp.core.queue":1,"admincp.core.navigation":1,"admincp.core.announcements":1,"admincp.core.reactions":1,"admincp.core.registration":1,"admincp.core.social_media":1,"admincp.core.terms":1,"admincp.errors":1,"admincp.core.placeholders":1,"admincp.members":1,"admincp.integrations":1,"admincp.integrations.edit":1,"admincp.discord":1,"admincp.minecraft":1,"admincp.minecraft.authme":1,"admincp.minecraft.servers":1,"admincp.minecraft.query_errors":1,"admincp.minecraft.banners":1,"admincp.modules":1,"admincp.pages":1,"admincp.security":1,"admincp.security.acp_logins":1,"admincp.security.template":1,"admincp.styles":1,"admincp.styles.panel_templates":1,"admincp.styles.templates":1,"admincp.styles.templates.edit":1,"admincp.styles.images":1,"admincp.update":1,"admincp.users":1,"admincp.users.edit":1,"admincp.groups":1,"admincp.groups.self":1,"admincp.widgets":1,"modcp.ip_lookup":1,"modcp.punishments":1,"modcp.punishments.warn":1,"modcp.punishments.ban":1,"modcp.punishments.banip":1,"modcp.punishments.revoke":1,"modcp.reports":1,"modcp.profile_banner_reset":1,"usercp.messaging":1,"usercp.signature":1,"admincp.forums":1,"usercp.private_profile":1,"usercp.nickname":1,"usercp.profile_banner":1,"profile.private.bypass":1, "admincp.security.all":1,"admincp.core.hooks":1,"admincp.security.group_sync":1,"admincp.core.emails_mass_message":1,"modcp.punishments.reset_avatar":1,"usercp.gif_avatar":1}',
             'order' => 1,
             'staff' => true,
         ]);
@@ -63,8 +61,11 @@ class DatabaseInitialiser {
             'group_html' => '<span class="badge badge-secondary">Unconfirmed Member</span>',
             'group_username_color' => '#6c757d',
             'permissions' => '{}',
+            'default_group' => true,
             'order' => 4
         ]);
+
+        Util::setSetting('member_list_viewable_groups', json_encode([1, 2, 3, 4]), 'Members');
     }
 
     private function initialiseLanguages(): void {
@@ -101,6 +102,11 @@ class DatabaseInitialiser {
             'enabled' => true,
         ]);
 
+        $this->_db->insert('modules', [
+            'name' => 'Members',
+            'enabled' => true,
+        ]);
+
         $this->_cache->setCache('modulescache');
         $this->_cache->store('enabled_modules', [
             [
@@ -118,6 +124,10 @@ class DatabaseInitialiser {
             [
                 'name' => 'Cookie Consent',
                 'priority' => 10
+            ],
+            [
+                'name' => 'Members',
+                'priority' => 13
             ],
         ]);
 
@@ -173,15 +183,12 @@ class DatabaseInitialiser {
         Util::setSetting('recaptcha_type', 'Recaptcha3');
         Util::setSetting('recaptcha_login', '0');
         Util::setSetting('email_verification', '1');
-        Util::setSetting('nameless_version', '2.0.0-pr13');
+        Util::setSetting('nameless_version', '2.1.3');
         Util::setSetting('version_checked', date('U'));
         Util::setSetting('phpmailer', '0');
-        Util::setSetting('phpmailer_type', 'smtp');
-        Util::setSetting('verify_accounts', '0');
         Util::setSetting('user_avatars', '0');
-        Util::setSetting('forum_layout', '1');
         Util::setSetting('avatar_site', 'cravatar');
-        Util::setSetting('mc_integration', '1');
+        Util::setSetting(Settings::MINECRAFT_INTEGRATION, '1');
         Util::setSetting('discord_integration', '0');
         Util::setSetting('avatar_type', 'helmavatar');
         Util::setSetting('home_type', 'news');
@@ -191,13 +198,11 @@ class DatabaseInitialiser {
         Util::setSetting('unique_id', substr(str_shuffle('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'), 0, 62));
         Util::setSetting('use_api', 0);
         Util::setSetting('mc_api_key', SecureRandom::alphanumeric());
-        Util::setSetting('external_query', '0');
-        Util::setSetting('followers', '0');
-        Util::setSetting('language', '1');
-        Util::setSetting('timezone', 'Europe/London');
+        Util::setSetting('query_type', 'internal');
+        Util::setSetting('player_list_limit', '20');
+        Util::setSetting('timezone', $_SESSION['install_timezone']);
         Util::setSetting('maintenance', '0');
         Util::setSetting('maintenance_message', 'This website is currently in maintenance mode.');
-        Util::setSetting('authme', 0);
         Util::setSetting('default_avatar_type', 'minecraft');
         Util::setSetting('private_profile', '1');
         Util::setSetting('validate_user_action', '{"action":"promote","group":1}');
@@ -230,6 +235,10 @@ class DatabaseInitialiser {
         Util::setSetting('t_and_c', 'By registering on our website, you agree to the following:<p>' . $nameless_terms . '</p>');
     }
 
+    private function initialiseTasks(): void {
+        GenerateSitemap::schedule(new Language('core', 'en_UK'));
+    }
+
     private function initialiseTemplates(): void {
         $this->_db->insert('templates', [
             'name' => 'DefaultRevamp',
@@ -247,9 +256,10 @@ class DatabaseInitialiser {
         ]);
         $this->_cache->store('panel_default', 'Default');
 
-
-        $config_path = $this->_config['core']['path'];
-        $config_path = ($config_path ? '/' . trim($config_path, '/') : '');
+        $config_path = Config::get('core.path');
+        if (!empty($config_path)) {
+            $config_path = '/' . trim($config_path, '/');
+        }
 
         $this->_cache->setCache('backgroundcache');
         $this->_cache->store('banner_image', $config_path . '/uploads/template_banners/homepage_bg_trimmed.jpg');
@@ -313,19 +323,19 @@ class DatabaseInitialiser {
             'forum_id' => 2,
             'topic_id' => 1,
             'post_creator' => 1,
-            'post_content' => Output::getClean(
-                '&lt;p&gt;Welcome!&lt;/p&gt;
-                    &lt;p&gt;To get started with NamelessMC, visit your StaffCP using the blue gear icon in the top right of your screen.&lt;/p&gt;
-                    &lt;p&gt;If you need support, visit our Discord server: &lt;a href=&quot;https://discord.gg/nameless&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;https://discord.gg/nameless&lt;/a&gt;&lt;/p&gt;
-                    &lt;p&gt;Thank you and enjoy,&lt;/p&gt;
-                    &lt;p&gt;The NamelessMC Development team.&lt;/p&gt;'
-            ),
+            'post_content' => <<<POST
+                <p>Welcome!</p>
+                <p>To get started with NamelessMC, visit your StaffCP using the blue gear icon in the top right of your screen.</p>
+                <p>If you need support, visit our Discord server: <a href="https://discord.gg/nameless" target="_blank" rel="noopener">https://discord.gg/nameless</a></p>
+                <p>Thank you and enjoy,</p>
+                <p>The NamelessMC Development team.</p>
+                POST,
             'post_date' => date('Y-m-d H:i:s'),
             'created' => date('U'),
             'last_edited' => date('U'),
         ]);
 
-        // Must be updated afterwards due of foreign key
+        // Must be updated afterwards due to foreign key
         $this->_db->update('forums', 2, [
             'last_post_date' => date('U'),
             'last_user_posted' => 1,

@@ -59,7 +59,7 @@ class ListUsersEndpoint extends KeyAuthEndpoint {
             'previous_page' => null,
         ];
 
-        $base_url = Util::getSelfURL() . 'index.php?route=/api/v2/users&';
+        $base_url = URL::getSelfURL() . 'index.php?route=/api/v2/users&';
         if (isset($_GET['limit']) && is_numeric($_GET['limit'])) {
             $limit = (int) $_GET['limit'];
             if ($limit >= 1) {
@@ -107,6 +107,21 @@ class ListUsersEndpoint extends KeyAuthEndpoint {
                 'verified' => (bool)$user->active,
                 'integrations' => $integrations
             ];
+
+            if (isset($_GET['groups'])) {
+                $groups = $api->getDb()->query(
+                    <<<SQL
+                    SELECT g.id, g.name, g.staff, g.order
+                    FROM nl2_users_groups ug
+                        RIGHT JOIN nl2_groups g
+                            ON g.id = ug.group_id
+                    WHERE ug.user_id = ?
+                    SQL,
+                    [$user->id]
+                );
+
+                $user_json['groups'] = $groups->results();
+            }
 
             $users_json[] = $user_json;
         }

@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr8
+ *  NamelessMC version 2.1.1
  *
  *  License: MIT
  *
@@ -12,7 +12,7 @@
 const FRONT_END = true;
 
 // Set current page URL in session, provided it's not the login page
-if (defined('PAGE') && PAGE != 'login' && PAGE != 'register' && PAGE != 404 && PAGE != 'maintenance' && (!isset($_GET['route']) || !str_contains($_GET['route'], '/queries'))) {
+if (defined('PAGE') && PAGE != 'login' && PAGE != 'register' && PAGE != 404 && PAGE != 'maintenance' && PAGE != 'oauth' && (!isset($_GET['route']) || !str_contains($_GET['route'], '/queries'))) {
     if (FRIENDLY_URLS === true) {
         $split = explode('?', $_SERVER['REQUEST_URI']);
 
@@ -33,11 +33,11 @@ if (defined('PAGE') && PAGE != 'login' && PAGE != 'register' && PAGE != 404 && P
 }
 
 // Check if any integrations is required before user can continue
-if ($user->isLoggedIn() && defined('PAGE') && PAGE != 'cc_connections') {
+if ($user->isLoggedIn() && defined('PAGE') && PAGE != 'cc_connections' && PAGE != 'oauth') {
     foreach (Integrations::getInstance()->getEnabledIntegrations() as $integration) {
-        if ($integration->data()->required) {
+        if ($integration->data()->required && $integration->allowLinking()) {
             $integrationUser = $user->getIntegration($integration->getName());
-            if ($integrationUser == null || !$integrationUser->isVerified()) {
+            if ($integrationUser === null || !$integrationUser->isVerified()) {
                 Session::flash('connections_error', $language->get('user', 'integration_required_to_continue'));
                 Redirect::to(URL::build('/user/connections'));
             }
@@ -47,18 +47,20 @@ if ($user->isLoggedIn() && defined('PAGE') && PAGE != 'cc_connections') {
 
 if (defined('PAGE') && PAGE != 404) {
     // Auto unset signin tfa variables if set
-    if (!str_contains($_GET['route'], '/queries/') && (isset($_SESSION['remember']) || isset($_SESSION['username']) || isset($_SESSION['email']) || isset($_SESSION['password'])) && (!isset($_POST['tfa_code']) && !isset($_SESSION['mcassoc']))) {
+    if (!str_contains($_GET['route'], '/queries/') && (isset($_SESSION['remember']) || isset($_SESSION['username']) || isset($_SESSION['email']) || isset($_SESSION['password'])) && !isset($_POST['tfa_code'])) {
         unset($_SESSION['remember'], $_SESSION['username'], $_SESSION['email'], $_SESSION['password']);
     }
 }
 
-$template_path = ROOT_PATH . '/custom/templates/' . TEMPLATE;
-$smarty->setTemplateDir($template_path);
 $smarty->setCompileDir(ROOT_PATH . '/cache/templates_c');
 
 if (file_exists(ROOT_PATH . '/custom/templates/' . TEMPLATE . '/template.php')) {
+    $smarty->setTemplateDir(ROOT_PATH . '/custom/templates/' . TEMPLATE);
+
     require(ROOT_PATH . '/custom/templates/' . TEMPLATE . '/template.php');
 } else {
+    $smarty->setTemplateDir(ROOT_PATH . '/custom/templates/DefaultRevamp');
+
     require(ROOT_PATH . '/custom/templates/DefaultRevamp/template.php');
 }
 
@@ -104,17 +106,23 @@ if (isset($_GET['route']) && $_GET['route'] != '/') {
 }
 
 if (!defined('PAGE_DESCRIPTION')) {
-    $page_metadata = DB::getInstance()->get('page_descriptions', ['page', $route])->results();
-    if (count($page_metadata)) {
+    $page_metadata = DB::getInstance()->get('page_descriptions', ['page', $route]);
+    if ($page_metadata->count()) {
+        $page_metadata = $page_metadata->first();
         $smarty->assign([
-            'PAGE_DESCRIPTION' => str_replace('{site}', Output::getClean(SITE_NAME), $page_metadata[0]->description),
-            'PAGE_KEYWORDS' => $page_metadata[0]->tags
+            'PAGE_DESCRIPTION' => str_replace('{site}', Output::getClean(SITE_NAME), Output::getPurified($page_metadata->description)),
+            'PAGE_KEYWORDS' => Output::getPurified($page_metadata->tags),
         ]);
+
+        $og_image = $page_metadata->image;
+        if ($og_image) {
+            $smarty->assign('OG_IMAGE', rtrim(URL::getSelfURL(), '/') . $og_image);
+        }
     }
 } else {
     $smarty->assign([
-        'PAGE_DESCRIPTION' => str_replace('{site}', Output::getClean(SITE_NAME), PAGE_DESCRIPTION),
-        'PAGE_KEYWORDS' => (defined('PAGE_KEYWORDS') ? PAGE_KEYWORDS : '')
+        'PAGE_DESCRIPTION' => str_replace('{site}', Output::getClean(SITE_NAME), Output::getPurified(PAGE_DESCRIPTION)),
+        'PAGE_KEYWORDS' => (defined('PAGE_KEYWORDS') ? Output::getPurified(PAGE_KEYWORDS) : '')
     ]);
 }
 
@@ -148,7 +156,6 @@ if ($analytics_id) {
 $smarty->assign([
     'FOOTER_LINKS_TITLE' => $language->get('general', 'links'),
     'FOOTER_SOCIAL_TITLE' => $language->get('general', 'social'),
-    'TOGGLE_DARK_MODE_TEXT' => $language->get('general', 'toggle_dark_mode'),
     'AUTO_LANGUAGE_TEXT' => $language->get('general', 'auto_language'),
     'ENABLED' => $language->get('user', 'enabled'),
     'DISABLED' => $language->get('user', 'disabled'),

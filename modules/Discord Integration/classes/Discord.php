@@ -2,7 +2,7 @@
 /**
  * Discord utility class
  *
- * @package Modules\Discord Integration
+ * @package Modules\DiscordIntegration
  * @author Aberdeener
  * @version 2.0.0-pr13
  * @license MIT
@@ -15,28 +15,9 @@ class Discord {
     private static bool $_is_bot_setup;
 
     /**
-     * @var int|null The ID of this website's Discord server
-     */
-    private static ?int $_guild_id;
-
-    /**
      * @var Language Instance of Language class for translations
      */
     private static Language $_discord_integration_language;
-
-    /**
-     * @var array|string[] Valid responses from the Discord bot
-     */
-    private static array $_valid_responses = [
-        'fullsuccess',
-        'badparameter',
-        'error',
-        'invguild',
-        'invuser',
-        'notlinked',
-        'unauthorized',
-        'invrole',
-    ];
 
     /**
      * Update a user's roles in the Discord guild.
@@ -44,44 +25,75 @@ class Discord {
      * @param User $user The user whose roles to update
      * @param array $added Array of Discord role IDs to add
      * @param array $removed Array of Discord role IDs to remove
-     * @return bool Whether the request was successful or not
+     * @return false|array Roles added and removed with their status. False if error
      */
-    public static function updateDiscordRoles(User $user, array $added, array $removed): bool {
+    public static function updateDiscordRoles(User $user, array $added, array $removed) {
         if (!self::isBotSetup()) {
             return false;
         }
 
         $integrationUser = $user->getIntegration('Discord');
-        if ($integrationUser == null || !$integrationUser->isVerified()) {
+        if ($integrationUser === null || !$integrationUser->isVerified()) {
             return false;
         }
 
-        $changed_arr = array_merge(self::assembleGroupArray($added, 'add'), self::assembleGroupArray($removed, 'remove'));
+        // Filter out any `null` values that snuck into $added or $removed
+        $added = array_filter($added);
+        $removed = array_filter($removed);
 
-        if (!count($changed_arr)) {
+        $user_discord_id = $integrationUser->data()->identifier;
+        $role_changes = [];
+        foreach ($added as $role) {
+            $role_changes[] = [
+                'user_id' => $user_discord_id,
+                'role_id' => $role,
+                'action' => 'add'
+            ];
+        }
+        foreach ($removed as $role) {
+            $role_changes[] = [
+                'user_id' => $user_discord_id,
+                'role_id' => $role,
+                'action' => 'remove'
+            ];
+        }
+
+        $result = self::botRequest('/applyRoleChanges', json_encode([
+            'guild_id' => self::getGuildId(),
+            'api_key' => Util::getSetting('mc_api_key'),
+            'role_changes' => $role_changes
+        ]));
+
+        // No point to log the HTTP request failure here, `botRequest` already does it
+        if ($result === false) {
             return false;
         }
 
-        $json = self::assembleJson($integrationUser->data()->identifier, $changed_arr);
+        $result = json_decode($result, true);
 
-        $result = self::discordBotRequest('/roleChange', $json);
+        $status = $result['status'];
+        if ($status !== 'success') {
+            $meta = $result['meta'] ?? '';
 
-        if ($result == 'fullsuccess') {
-            return true;
+            switch ($status) {
+                case 'bad_request':
+                case 'not_linked':
+                case 'unauthorized':
+                case 'invalid_guild':
+                    Log::getInstance()->log(Log::Action('discord/role_set'), "Status: $status, meta: $meta", $user->data()->id);
+                    break;
+                default:
+                    Log::getInstance()->log(Log::Action('discord/role_set'), "Invalid 'status' response from bot $status", $user->data()->id);
+            }
+
+            return false;
         }
 
-        if ($result == 'partsuccess') {
-            Log::getInstance()->log(Log::Action('discord/role_set'), self::getLanguageTerm('discord_bot_error_partsuccess'));
-            return true;
-        }
-
-        $errors = self::parseErrors($result);
-
-        foreach ($errors as $error) {
-            Log::getInstance()->log(Log::Action('discord/role_set'), $error, $user->data()->id);
-        }
-
-        return false;
+        $role_changes = $result['role_changes'];
+        return array_map(static fn (array $role_change) => [
+            'group_id' => $role_change['role_id'],
+            'status' => $role_change['status']
+        ], $role_changes);
     }
 
     /**
@@ -89,26 +101,6 @@ class Discord {
      */
     public static function isBotSetup(): bool {
         return self::$_is_bot_setup ??= Util::getSetting('discord_integration');
-    }
-
-    /**
-     * Create a JSON object to send to the Discord bot.
-     *
-     * @param array $role_ids Array of Discord role IDs to add or remove
-     * @param string $action Whether to 'add' or 'remove' the groups
-     * @return array Assembled array of Discord role IDs and their action
-     */
-    private static function assembleGroupArray(array $role_ids, string $action): array {
-        $return = [];
-
-        foreach ($role_ids as $role_id) {
-            $return[] = [
-                'id' => $role_id,
-                'action' => $action
-            ];
-        }
-
-        return $return;
     }
 
     /**
@@ -130,31 +122,10 @@ class Discord {
     }
 
     /**
-     * Create a JSON objec to send to the Discord bot.
-     *
-     * @param int $user_id Discord user ID to affect
-     * @param array $change_arr Array of Discord role IDs to add or remove (compiled with `assembleGroupArray`)
-     * @return string JSON object to send to the Discord bot
+     * @return string|null Discord guild ID for this site
      */
-    private static function assembleJson(int $user_id, array $change_arr): string {
-        // TODO cache or define() website api key and discord guild id
-        return json_encode([
-            'guild_id' => trim(self::getGuildId()),
-            'user_id' => $user_id,
-            'api_key' => trim(Util::getSetting('mc_api_key')),
-            'roles' => $change_arr,
-        ]);
-    }
-
-    /**
-     * @return int|null Discord guild ID for this site
-     */
-    public static function getGuildId(): ?int {
-        if (!isset(self::$_guild_id)) {
-            self::$_guild_id = (int) Util::getSetting('discord');
-        }
-
-        return self::$_guild_id;
+    public static function getGuildId(): ?string {
+        return Util::getSetting('discord');
     }
 
     /**
@@ -164,23 +135,15 @@ class Discord {
      * @param string|null $body Body of the request
      * @return false|string Response from the Discord bot or false if the request failed
      */
-    private static function discordBotRequest(string $url = '/status', ?string $body = null) {
+    public static function botRequest(string $url, ?string $body = null) {
         $client = HttpClient::post(BOT_URL . $url, $body);
 
         if ($client->hasError()) {
-            Log::getInstance()->log(Log::Action('discord/role_set'), $client->getError());
+            Log::getInstance()->log(Log::Action('discord/bot_request_failed'), $client->getError());
             return false;
         }
 
-        $response = $client->contents();
-
-        if (in_array($response, self::$_valid_responses)) {
-            return $response;
-        }
-
-        // Log unknown error from bot
-        Log::getInstance()->log(Log::Action('discord/role_set'), $response);
-        return false;
+        return $client->contents();
     }
 
     /**
@@ -196,30 +159,6 @@ class Discord {
         }
 
         return self::$_discord_integration_language->get('discord_integration', $term, $variables);
-    }
-
-    /**
-     * Parse errors from a request to the Discord bot.
-     *
-     * @param mixed $result Result of the Discord bot request
-     * @return array Array of errors during a request to the Discord bot
-     */
-    private static function parseErrors($result): array {
-        if ($result === false) {
-            // This happens when the url is invalid OR the bot is unreachable (down, firewall, etc)
-            // OR they have `allow_url_fopen` disabled in php.ini OR the bot returned a new error (they should always check logs)
-            return [
-                self::getLanguageTerm('discord_communication_error'),
-                self::getLanguageTerm('discord_bot_check_logs'),
-            ];
-        }
-
-        if (in_array($result, self::$_valid_responses)) {
-            return [self::getLanguageTerm('discord_bot_error_' . $result)];
-        }
-
-        // This should never happen
-        return [self::getLanguageTerm('discord_unknown_error')];
     }
 
     /**

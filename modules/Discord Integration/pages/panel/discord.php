@@ -28,14 +28,14 @@ if (Input::exists()) {
             $validation = Validate::check($_POST, [
                 'discord_guild_id' => [
                     Validate::MIN => 18,
-                    Validate::MAX => 18,
+                    Validate::MAX => 20,
                     Validate::NUMERIC => true,
                     Validate::REQUIRED => true,
                 ]
             ])->messages([
                 'discord_guild_id' => [
-                    Validate::MIN => Discord::getLanguageTerm('discord_id_length'),
-                    Validate::MAX => Discord::getLanguageTerm('discord_id_length'),
+                    Validate::MIN => Discord::getLanguageTerm('discord_id_length', ['min' => 18, 'max' => 20]),
+                    Validate::MAX => Discord::getLanguageTerm('discord_id_length', ['min' => 18, 'max' => 20]),
                     Validate::NUMERIC => Discord::getLanguageTerm('discord_id_numeric'),
                     Validate::REQUIRED => Discord::getLanguageTerm('discord_id_required'),
                 ]
@@ -43,6 +43,7 @@ if (Input::exists()) {
 
             if ($validation->passed()) {
                 Util::setSetting('discord', Input::get('discord_guild_id'));
+
                 $success = Discord::getLanguageTerm('discord_settings_updated');
 
             } else {
@@ -67,7 +68,8 @@ if (Input::exists()) {
         }
 
         if (!count($errors)) {
-            $success = Discord::getLanguageTerm('discord_settings_updated');
+            Session::flash('discord_success', Discord::getLanguageTerm('discord_settings_updated'));
+            Redirect::to(URL::build('/panel/discord'));
         }
     } else {
         // Invalid token
@@ -77,6 +79,10 @@ if (Input::exists()) {
 
 // Load modules + template
 Module::loadPage($user, $pages, $cache, $smarty, [$navigation, $cc_nav, $staffcp_nav], $widgets, $template);
+
+if (Session::exists('discord_success')) {
+    $success = Session::flash('discord');
+}
 
 if (isset($success)) {
     $smarty->assign([
@@ -99,6 +105,8 @@ if (Session::exists('discord_error')) {
     ]);
 }
 
+// TODO: Add a check to see if the bot is online using `/status` endpoint Discord::botRequest('/status');
+
 $smarty->assign([
     'PARENT_PAGE' => PARENT_PAGE,
     'DASHBOARD' => $language->get('admin', 'dashboard'),
@@ -113,7 +121,7 @@ $smarty->assign([
     'INVITE_LINK' => Discord::getLanguageTerm('discord_invite_info', [
         'inviteLinkStart' => '<a target="_blank" href="https://namelessmc.com/discord-bot-invite">',
         'inviteLinkEnd' => '</a>',
-        'command' => '<code>/apiurl</code>',
+        'command' => '<code>/configure link</code>',
         'selfHostLinkStart' => '<a target="_blank" href="https://github.com/NamelessMC/Nameless-Link/wiki/Installation-guide">',
         'selfHostLinkEnd' => '</a>',
     ]),

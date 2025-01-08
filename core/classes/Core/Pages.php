@@ -17,7 +17,7 @@ class Pages {
     /**
      * @var array Array of data about the active page.
      */
-    private array $_active_page;
+    private array $_active_page = [];
 
     /**
      * @var array<callable> Array of sitemap files and methods.
@@ -110,7 +110,7 @@ class Pages {
     /**
      * Get registered sitemap methods.
      *
-     * @return array<array<class-string, string>> Array of sitemap methods.
+     * @return array<callable> Array of sitemap methods.
      */
     public function getSitemapMethods(): array {
         return $this->_sm_methods;
@@ -152,7 +152,6 @@ class Pages {
 
     /**
      * Get the page details the user currently viewing.
-     * @deprecated  Not used internally.
      *
      * @return array Details of current page.
      */

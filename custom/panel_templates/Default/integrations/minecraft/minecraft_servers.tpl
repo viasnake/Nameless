@@ -77,13 +77,27 @@
                                 <div class="form-group">
                                     <label for="inputDefaultServer">{$DEFAULT_SERVER}</label>
                                     <select id="inputDefaultServer" class="form-control" name="default_server">
-                                        {if $SERVERS|count > 1}
-                                        <option value="none" {if $DEFAULT_SERVER_VALUE eq 0} selected{/if}>{$NO_DEFAULT_SERVER}</option>
-                                        {/if}
                                         {if isset($SERVERS) && count($SERVERS)}
-                                        {foreach from=$SERVERS item=server}
-                                        <option value="{$server.id}" {if $server.is_default eq 1} selected{/if}>{$server.name}</option>
-                                        {/foreach}
+                                            <option value="none" {if $DEFAULT_SERVER_VALUE eq 0} selected{/if}>{$NO_DEFAULT_SERVER}</option>
+                                            {foreach from=$SERVERS item=server}
+                                                <option value="{$server.id}" {if $server.is_default eq 1} selected{/if}>{$server.name}</option>
+                                            {/foreach}
+                                        {else}
+                                            <option value="none" selected>{$NO_SERVERS}</option>
+                                        {/if}
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="inputGroupSyncServer">{$GROUP_SYNC_SERVER}</label>
+                                    <select id="inputGroupSyncServer" class="form-control" name="group_sync_server">
+                                        {if isset($SERVERS) && count($SERVERS)}
+                                            <option value="none" {if $GROUP_SYNC_SERVER_VALUE eq 0}selected{/if}>{$NO_GROUP_SYNC_SERVER}</option>
+                                            {foreach from=$SERVERS item=server}
+                                                <option value="{$server.id}" {if $GROUP_SYNC_SERVER_VALUE eq $server.id} selected{/if}>{$server.name}</option>
+                                            {/foreach}
+                                        {else}
+                                            <option value="none" selected>{$NO_SERVERS}</option>
                                         {/if}
                                     </select>
                                 </div>
@@ -93,13 +107,21 @@
                                     <input id="inputQueryInterval" name="interval" type="number" class="form-control" value="{$QUERY_INTERVAL_VALUE}" min="5" max="60" />
                                 </div>
 
-                                <div class="form-group custom-control custom-switch">
-                                    <input type="hidden" name="external_query" value="0">
-                                    <input id="inputExternalQuery" name="external_query" type="checkbox" class="custom-control-input js-check-change" value="1" {if $EXTERNAL_QUERY_VALUE} checked{/if} />
-                                    <label for="inputExternalQuery" class="custom-control-label">
-                                        {$EXTERNAL_QUERY} <span class="badge badge-info"><i class="fa fa-question-circle" data-container="body" data-toggle="popover" data-placement="top" title="{$INFO}" data-content="{$EXTERNAL_QUERY_INFO}"></i></span>
-                                    </label>
+                                <div class="form-group">
+                                    <label for="inputQueryType">{$QUERY_TYPE} <span class="badge badge-info"><i class="fa fa-question-circle" data-container="body" data-toggle="popover" data-placement="top" title="{$INFO}" data-content="{$QUERY_TYPE_INFO}"></i></span></label>
+                                    <select id="inputQueryType" class="form-control" name="query_type">
+                                        <option value="internal" name="{$INTERNAL}" {if $QUERY_TYPE_VALUE eq 'internal'}selected{/if}>{$INTERNAL}</option>
+                                        <option value="external" name="{$EXTERNAL}" {if $QUERY_TYPE_VALUE eq 'external'}selected{/if}>{$EXTERNAL}</option>
+                                        <option value="plugin" name="{$PLUGIN}" {if $QUERY_TYPE_VALUE eq 'plugin'}selected{/if}>{$PLUGIN}</option>
+                                    </select>
                                 </div>
+
+                                {if $QUERY_TYPE_VALUE eq 'plugin'}
+                                    <div class="form-group">
+                                        <label for="inputPlayerLimit">{$PLAYER_LIST_LIMIT}</label>
+                                        <input id="inputPlayerLimit" name="player_list_limit" type="number" class="form-control" value="{$PLAYER_LIST_LIMIT_VALUE}" min="0" />
+                                    </div>
+                                {/if}
 
                                 <div class="form-group custom-control custom-switch">
                                     <input type="hidden" name="status_page" value="0">

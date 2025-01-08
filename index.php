@@ -15,7 +15,7 @@
 header('X-Frame-Options: SAMEORIGIN');
 
 if ((!defined('DEBUGGING') || !DEBUGGING) && (getenv('NAMELESS_DEBUGGING') || isset($_SERVER['NAMELESS_DEBUGGING']))) {
-    define('DEBUGGING', 1);
+    define('DEBUGGING', true);
 }
 
 if (defined('DEBUGGING') && DEBUGGING) {
@@ -26,7 +26,7 @@ if (defined('DEBUGGING') && DEBUGGING) {
 
 // Ensure PHP version >= 7.4
 if (PHP_VERSION_ID < 70400) {
-    die('NamelessMC is not compatible with PHP versions older than 7.4');
+    die('NamelessMC is not compatible with PHP versions older than 7.4, you are running PHP ' . PHP_VERSION);
 }
 
 // Start page load timer
@@ -34,11 +34,11 @@ define('PAGE_START_TIME', microtime(true));
 
 if (!is_dir(__DIR__ . '/vendor') || !is_dir(__DIR__ . '/core/assets/vendor')) {
     die(
-        "Your installation is missing the 'vendor' or 'core/assets/vendor' directory. These directories are included in
-        releases, but not in the git repository. For regular installations, please make sure to download a release from
-        the GitHub releases page, not from the button on the home page to download the latest source code. If you do
-        want to run the latest version from source control for development versions, please run 'composer install'
-        and 'yarnpkg'/'yarn install'."
+        "Your installation is missing the 'vendor' or 'core/assets/vendor' directory.<br>
+        <br>
+        Please use the 'nameless-deps-dist.zip' file, not a source code zip file.<br>
+        <br>
+        If you are a developer, please refer to the instructions in CONTRIBUTING.md"
     );
 }
 
@@ -46,7 +46,19 @@ const PATH = '/';
 const ROOT_PATH = __DIR__;
 
 require_once __DIR__ . '/vendor/autoload.php';
-require_once __DIR__ . '/core/includes/constants/autoload.php';
+
+if (isset($_GET['route']) && $_GET['route'] == '/rewrite_test') {
+    require_once('rewrite_test.php');
+    die();
+}
+
+if (!Config::exists() || Config::get('core.installed') !== true) {
+    if (is_file(ROOT_PATH . '/install.php')) {
+        Redirect::to('install.php');
+    } else {
+        die('Config does not exist, but neither does the installer');
+    }
+}
 
 $page = 'Home';
 
@@ -56,7 +68,7 @@ if (!ini_get('upload_tmp_dir')) {
     $tmp_dir = ini_get('upload_tmp_dir');
 }
 
-if (Util::getProtocol() === 'https') {
+if (HttpUtils::getProtocol() === 'https') {
     ini_set('session.cookie_secure', 'On');
 }
 
@@ -68,17 +80,8 @@ $directory = $_SERVER['REQUEST_URI'];
 $directories = explode('/', $directory);
 $lim = count($directories);
 
-if (isset($_GET['route']) && $_GET['route'] == '/rewrite_test') {
-    require_once('rewrite_test.php');
-    die();
-}
-
 // Start initialising the page
 require(ROOT_PATH . '/core/init.php');
-
-if (!isset($GLOBALS['config']['core']) && is_file(ROOT_PATH . '/install.php')) {
-    Redirect::to('install.php');
-}
 
 // Get page to load from URL
 if (!isset($_GET['route']) || $_GET['route'] == '/') {

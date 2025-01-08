@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton | Revamped by Xemah
  *    https://github.com/NamelessMC/Nameless/
- *    NamelessMC version 2.0.0-pr13
+ *    NamelessMC version 2.1.2
  *
  *    License: MIT
  *
@@ -25,8 +25,8 @@ class DefaultRevamp_Template extends TemplateBase {
     public function __construct($cache, $smarty, $language, $user, $pages) {
         $template = [
             'name' => 'DefaultRevamp',
-            'version' => '2.0.0-pr13',
-            'nl_version' => '2.0.0-pr13',
+            'version' => '2.1.3',
+            'nl_version' => '2.1.3',
             'author' => '<a href="https://xemah.com/" target="_blank">Xemah</a>',
         ];
 
@@ -40,14 +40,7 @@ class DefaultRevamp_Template extends TemplateBase {
             AssetTree::FONT_AWESOME,
             AssetTree::JQUERY,
             AssetTree::JQUERY_COOKIE,
-        ]);
-
-        $this->addCSSFiles([
-            $template['path'] . 'css/fomantic.min.css' => [],
-        ]);
-
-        $this->addJSFiles([
-            $template['path'] . 'js/fomantic.min.js' => [],
+            AssetTree::FOMANTIC_UI,
         ]);
 
         $smarty->assign('TEMPLATE', $template);
@@ -61,7 +54,6 @@ class DefaultRevamp_Template extends TemplateBase {
 
         if (defined('DARK_MODE') && DARK_MODE == '1') {
             $smartyDarkMode = true;
-            define('TEMPLATE_TINY_EDITOR_DARKMODE', true);
         }
 
         if ($cache->isCached('navbarColour')) {
@@ -88,7 +80,7 @@ class DefaultRevamp_Template extends TemplateBase {
         define('PAGE_LOAD_TIME', $this->_language->get('general', 'page_loaded_in', ['time' => round($page_load, 3)]));
 
         $this->addCSSFiles([
-            $this->_template['path'] . 'css/custom.css?v=2pr13' => []
+            $this->_template['path'] . 'css/custom.css?v=211' => []
         ]);
 
         $route = (isset($_GET['route']) ? rtrim($_GET['route'], '/') : '/');
@@ -96,7 +88,7 @@ class DefaultRevamp_Template extends TemplateBase {
         $JSVariables = [
             'siteName' => Output::getClean(SITE_NAME),
             'siteURL' => URL::build('/'),
-            'fullSiteUrl' => Util::getSelfURL() . ltrim(URL::build('/'), '/'),
+            'fullSiteURL' => URL::getSelfURL() . ltrim(URL::build('/'), '/'),
             'page' => PAGE,
             'avatarSource' => AvatarSource::getUrlToFormat(),
             'copied' => $this->_language->get('general', 'copied'),
@@ -118,10 +110,17 @@ class DefaultRevamp_Template extends TemplateBase {
             'loggedIn' => $this->_user->isLoggedIn() ? '1' : '0',
             'cookie' => defined('COOKIE_NOTICE') ? '1' : '0',
             'loadingTime' => Util::getSetting('page_loading') === '1' ? PAGE_LOAD_TIME : '',
-            'route' => $route
+            'route' => $route,
+            'csrfToken' => Token::get(),
         ];
 
-        if (strpos($route, '/forum/topic/') !== false || PAGE == 'profile') {
+        // Logo
+        $cache = new Cache(['name' => 'nameless', 'extension' => '.cache', 'path' => ROOT_PATH . '/cache/']);
+        $cache->setCache('backgroundcache');
+        $logo_image = $cache->retrieve('logo_image');
+        $JSVariables['logoImage'] = !empty($logo_image) ? $logo_image : null;
+
+        if (str_contains($route, '/forum/topic/') || PAGE === 'profile') {
             $this->assets()->include([
                 AssetTree::JQUERY_UI,
             ]);
@@ -130,17 +129,16 @@ class DefaultRevamp_Template extends TemplateBase {
         $JSVars = '';
         $i = 0;
         foreach ($JSVariables as $var => $value) {
-            $JSVars .= ($i == 0 ? 'var ' : ', ') . $var . ' = "' . $value . '"';
+            $JSVars .= ($i == 0 ? 'const ' : ', ') . $var . ' = ' . json_encode($value);
             $i++;
         }
 
         $this->addJSScript($JSVars);
 
         $this->addJSFiles([
-            $this->_template['path'] . 'js/core/core.js' => [],
+            $this->_template['path'] . 'js/core/core.js?v=203' => [],
             $this->_template['path'] . 'js/core/user.js' => [],
-            $this->_template['path'] . 'js/core/pages.js' => [],
-            $this->_template['path'] . 'js/scripts.js' => [],
+            $this->_template['path'] . 'js/core/pages.js?v=203' => [],
         ]);
 
         foreach ($this->_pages->getAjaxScripts() as $script) {

@@ -4,7 +4,7 @@
  *
  * @package NamelessMC\Core
  * @author Samerton
- * @version 2.0.0-pr9
+ * @version 2.0.0
  * @license MIT
  */
 class Navigation {
@@ -93,11 +93,23 @@ class Navigation {
      * @param string $icon Icon to prepend to nav item.
      */
     public function addDropdown(string $name, string $title, string $location = 'top', int $order = 10, string $icon = ''): void {
+        if ($this->_panel && $location == 'top') {
+            // Discard order
+            // TODO: only a temporary solution to the link conflict issue in the StaffCP
+            if (count($this->_topNavbar)) {
+                $key = array_keys($this->_topNavbar)[count($this->_topNavbar) - 1];
+                $previous_order = $this->_topNavbar[$key]['order'];
+            } else {
+                $previous_order = 0;
+            }
+
+            $order = $previous_order + 1;
+        }
+
         // Add the dropdown
         if ($location == 'top') {
             // Navbar
             $this->_topNavbar[$name] = [
-                'type' => 'dropdown',
                 'title' => $title,
                 'items' => [],
                 'order' => $order,
@@ -106,7 +118,6 @@ class Navigation {
         } else {
             // Footer
             $this->_footerNav[$name] = [
-                'type' => 'dropdown',
                 'title' => $title,
                 'items' => [],
                 'order' => $order,
@@ -136,7 +147,7 @@ class Navigation {
                 'link' => $link,
                 'target' => $target,
                 'icon' => $icon,
-                'order' => $order
+                'order' => $order,
             ];
         } else if (isset($this->_footerNav[$dropdown])) {
             // Footer
@@ -145,7 +156,7 @@ class Navigation {
                 'link' => $link,
                 'target' => $target,
                 'icon' => $icon,
-                'order' => $order
+                'order' => $order,
             ];
         }
     }

@@ -9,16 +9,16 @@
  *  Leaderboards page
  */
 
+// MC integration and Placeholders enabled?
+if (!Util::getSetting('mc_integration') || Util::getSetting('placeholders') !== '1') {
+    require_once(ROOT_PATH . '/404.php');
+    die();
+}
+
 $leaderboard_placeholders = Placeholders::getInstance()->getLeaderboardPlaceholders();
 
 if (!count($leaderboard_placeholders)) {
     require_once(ROOT_PATH . '/403.php');
-    die();
-}
-
-// Placeholders enabled?
-if (Util::getSetting('placeholders') !== '1') {
-    require_once(ROOT_PATH . '/404.php');
     die();
 }
 
@@ -78,7 +78,7 @@ $template->addJSScript('
 
     function showTable(name, server_id, first = false) {
 
-        if (name == null) {
+        if (name === null) {
             name = $(".leaderboard_tab").first().attr("name");
             server_id = $(".leaderboard_tab").first().attr("server_id");
         }

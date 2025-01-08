@@ -39,6 +39,21 @@
                             <!-- Success and Error Alerts -->
                             {include file='includes/alerts.tpl'}
 
+                            <!-- Captcha warning -->
+                            {if isset($CAPTCHA_WARNINGS)}
+                                <div class="alert alert-warning alert-dismissible">
+                                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                        <span aria-hidden="true">&times;</span>
+                                    </button>
+                                    <h5><i class="icon fas fa-exclamation-triangle"></i> {$WARNING}</h5>
+                                    <ul>
+                                        {foreach from=$CAPTCHA_WARNINGS item=warning}
+                                            <li>{$warning}</li>
+                                        {/foreach}
+                                    </ul>
+                                </div>
+                            {/if}
+
                             <form id="enableRegistration" action="" method="post">
                                 <div class="form-group custom-control custom-switch">
                                     <input type="hidden" name="enable_registration" value="0">
@@ -144,22 +159,33 @@
                                                 && $provider_data['setup']} checked{/if} />
                                             <label for="enable-{$provider_name}" id="enable-{$provider_name}"
                                                 class="custom-control-label">
-                                                {$provider_name|ucfirst} <i class="{$provider_data['icon']} fa-1x"></i>
+                                                {$provider_name|ucfirst}
+                                                {if $provider_data['logo_url']}
+                                                    <img src="{$provider_data['logo_url']}" alt="{$provider_name|ucfirst} Logo" style="width: 16px; height: auto;">
+                                                {elseif $provider_data['icon']}
+                                                    <i class="{$provider_data['icon']}"></i>
+                                                {/if}
                                             </label>
                                         </div>
 
                                         <div class="form-group">
-                                            <label for="client-id-discord">Client ID</label>
+                                            <label for="client-id-{$provider_name}">{$CLIENT_ID}</label>
                                             <input type="text" name="client-id-{$provider_name}" class="form-control"
-                                                id="client-id-{$provider_name}" placeholder="Client ID"
-                                                value="{$provider_data['client_id']}">
+                                                   id="client-id-{$provider_name}" placeholder="Client ID"
+                                                   value="{$provider_data['client_id']}">
                                         </div>
 
                                         <div class="form-group">
-                                            <label for="client-secret-discord">Client Secret</label>
+                                            <label for="client-secret-{$provider_name}">{$CLIENT_SECRET}</label>
                                             <input type="password" name="client-secret-{$provider_name}"
-                                                class="form-control" id="client-secret-{$provider_name}"
-                                                placeholder="Client Secret" value="{$provider_data['client_secret']}">
+                                                   class="form-control" id="client-secret-{$provider_name}"
+                                                   placeholder="Client Secret" value="{$provider_data['client_secret']}">
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="client-url-{$provider_name}">{$REDIRECT_URL}</label>
+                                            <input type="text" class="form-control" id="client-url-{$provider_name}"
+                                                   readonly value="{$OAUTH_URL|replace:'{{provider}}':$provider_name}">
                                         </div>
                                     </div>
                                 </div>

@@ -26,14 +26,22 @@ class CoreApiErrors {
     public const ERROR_INVALID_EMAIL_ADDRESS = 'core:invalid_email_address';
     public const ERROR_INVALID_USERNAME = 'core:invalid_username';
     public const ERROR_UNABLE_TO_CREATE_ACCOUNT = 'core:unable_to_create_account';
-    public const ERROR_UNABLE_TO_SEND_REGISTRATION_EMAIL = 'core:unable_to_send_email';
+    public const ERROR_UNABLE_TO_SEND_REGISTRATION_EMAIL = 'core:unable_to_send_registration_email';
 
     public const ERROR_INVALID_INTEGRATION = 'core:invalid_integration';
     public const ERROR_INVALID_CODE = 'core:invalid_code';
+    public const ERROR_INTEGRATION_NOT_LINKED = 'core:integration_not_linked';
+    public const ERROR_INTEGRATION_ALREADY_VERIFIED = 'core:integration_already_verified';
+    public const ERROR_INTEGRATION_ALREADY_LINKED = 'core:integration_already_linked';
     public const ERROR_USER_ALREADY_ACTIVE = 'core:user_already_active';
 
     public const ERROR_UNABLE_TO_UPDATE_USERNAME = 'core:unable_to_update_username';
 
     public const ERROR_INTEGRATION_IDENTIFIER_ERRORS = 'core:integration_identifier_errors';
     public const ERROR_INTEGRATION_USERNAME_ERRORS = 'core:integration_username_errors';
+
+    public const ERROR_WEBHOOK_NAME_INCORRECT_LENGTH = 'core:webhook_name_incorrect_length';
+    public const ERROR_WEBHOOK_URL_INCORRECT_LENGTH = 'core:webhook_url_incorrect_length';
+    public const ERROR_WEBHOOK_INVALID_TYPE = 'core:webhook_type_invalid';
+    public const ERROR_WEBHOOK_INVALID_EVENT = 'core:webhook_event_invalid';
 }

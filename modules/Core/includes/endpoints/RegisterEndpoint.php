@@ -131,7 +131,8 @@ class RegisterEndpoint extends KeyAuthEndpoint {
                     'joined' => date('U'),
                     'lastip' => 'Unknown',
                     'reset_code' => $code,
-                    'last_online' => date('U')
+                    'last_online' => date('U'),
+                    'register_method' => 'api',
                 ]
             );
 
@@ -150,7 +151,7 @@ class RegisterEndpoint extends KeyAuthEndpoint {
                     }
 
                     $integration = $integrations->getIntegration($integration_name);
-                    if ($integration == null) {
+                    if ($integration === null) {
                         continue;
                     }
 
@@ -159,20 +160,12 @@ class RegisterEndpoint extends KeyAuthEndpoint {
                 }
             }
 
-            EventHandler::executeEvent('registerUser', [
-                    'user_id' => $user_id,
-                    'username' => $user->getDisplayname(),
-                    'content' => $api->getLanguage()->get('user', 'user_x_has_registered', [
-                        'user' => $user->getDisplayname(),
-                    ]),
-                    'avatar_url' => $user->getAvatar(128, true),
-                    'url' => Util::getSelfURL() . ltrim($user->getProfileURL(), '/'),
-                    'language' => $api->getLanguage(),
-                ]
-            );
+            EventHandler::executeEvent(new UserRegisteredEvent(
+                $user,
+            ));
 
             if ($return) {
-                $api->returnArray(['message' => $api->getLanguage()->get('api', 'finish_registration_link'), 'user_id' => $user_id, 'link' => rtrim(Util::getSelfURL(), '/') . URL::build('/complete_signup/', 'c=' . urlencode($code))]);
+                $api->returnArray(['message' => $api->getLanguage()->get('api', 'finish_registration_link'), 'user_id' => $user_id, 'link' => rtrim(URL::getSelfURL(), '/') . URL::build('/complete_signup/', 'c=' . urlencode($code))]);
             }
 
             return ['user_id' => $user_id];
@@ -201,13 +194,12 @@ class RegisterEndpoint extends KeyAuthEndpoint {
         $user_id = $user_id['user_id'];
 
         // Get link + template
-        $link = Util::getSelfURL() . ltrim(URL::build('/complete_signup/', 'c=' . urlencode($code)), '/');
+        $link = URL::getSelfURL() . ltrim(URL::build('/complete_signup/', 'c=' . urlencode($code)), '/');
 
         $sent = Email::send(
-            ['email' => Output::getClean($email), 'name' => Output::getClean($username)],
-            Output::getClean(SITE_NAME) . ' - ' . $api->getLanguage()->get('emails', 'register_subject'),
+            ['email' => $email, 'name' => $username],
+            SITE_NAME . ' - ' . $api->getLanguage()->get('emails', 'register_subject'),
             str_replace('[Link]', $link, Email::formatEmail('register', $api->getLanguage())),
-            Email::getReplyTo()
         );
 
         if (isset($sent['error'])) {

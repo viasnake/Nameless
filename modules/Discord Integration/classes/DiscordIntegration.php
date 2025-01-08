@@ -4,7 +4,7 @@
  *
  * @package Modules\Core\Integrations
  * @author Partydragen
- * @version 2.0.0-pr13
+ * @version 2.1.2
  * @license MIT
  */
 class DiscordIntegration extends IntegrationBase {
@@ -15,17 +15,30 @@ class DiscordIntegration extends IntegrationBase {
         $this->_name = 'Discord';
         $this->_icon = 'fab fa-discord';
         $this->_language = $language;
+        $this->_settings = ROOT_PATH . '/modules/Discord Integration/includes/admin_integrations/discord.php';
 
         parent::__construct();
     }
 
     public function onLinkRequest(User $user) {
-        $token = uniqid('', true);
+        $link_method = Util::getSetting('integration_link_method', 'bot', 'Discord Integration');
+        if ($link_method == 'oauth') {
+            // Link with oauth
+            Session::put('oauth_method', 'link_integration');
 
-        $integrationUser = new IntegrationUser($this);
-        $integrationUser->linkIntegration($user, null, null, false, $token);
+            $providers = NamelessOAuth::getInstance()->getProvidersAvailable();
+            $provider = $providers['discord'];
 
-        Session::flash('connections_success', Discord::getLanguageTerm('discord_id_confirm', ['token' => $token]));
+            Redirect::to($provider['url']);
+        } else {
+            // Discord bot linking
+            $token = uniqid('', true);
+
+            $integrationUser = new IntegrationUser($this);
+            $integrationUser->linkIntegration($user, null, null, false, $token);
+
+            Session::flash('connections_success', Discord::getLanguageTerm('discord_id_confirm', ['token' => $token]));
+        }
     }
 
     public function onVerifyRequest(User $user) {
@@ -43,6 +56,13 @@ class DiscordIntegration extends IntegrationBase {
         $integrationUser = new IntegrationUser($this, $user->data()->id, 'user_id');
         $integrationUser->unlinkIntegration();
 
+        // Remove any linked Discord roles
+        $roles = array_unique(array_map(static function ($group_id) {
+            return Discord::getDiscordRoleId(DB::getInstance(), $group_id);
+        }, $user->getAllGroupIds()));
+
+        Discord::updateDiscordRoles($user, [], $roles);
+
         Session::flash('connections_success', $this->_language->get('user', 'integration_unlinked', ['integration' => Output::getClean($this->_name)]));
     }
 
@@ -50,19 +70,26 @@ class DiscordIntegration extends IntegrationBase {
         // attempt to update their Discord roles
         $user = $integrationUser->getUser();
 
-        Discord::updateDiscordRoles($user, $user->getAllGroupIds(), []);
+        $roles = array_unique(array_map(static function ($group_id) {
+            return Discord::getDiscordRoleId(DB::getInstance(), $group_id);
+        }, $user->getAllGroupIds()));
+
+        Discord::updateDiscordRoles($user, $roles, []);
+        Session::flash('connections_success', $this->_language->get('user', 'integration_linked', ['integration' => Output::getClean($this->_name)]));
     }
 
     public function validateUsername(string $username, int $integration_user_id = 0): bool {
         $validation = Validate::check(['username' => $username], [
             'username' => [
                 Validate::REQUIRED => true,
-                Validate::REGEX => '/^.{2,32}#[0-9]{4}$/'
+                Validate::MIN => 2,
+                Validate::MAX => 32
             ]
         ])->messages([
             'username' => [
                 Validate::REQUIRED => $this->_language->get('admin', 'integration_username_required', ['integration' => $this->getName()]),
-                Validate::REGEX => $this->_language->get('admin', 'integration_username_invalid', ['integration' => $this->getName()])
+                Validate::MIN => $this->_language->get('admin', 'integration_username_invalid', ['integration' => $this->getName()]),
+                Validate::MAX => $this->_language->get('admin', 'integration_username_invalid', ['integration' => $this->getName()])
             ]
         ]);
 
@@ -89,7 +116,7 @@ class DiscordIntegration extends IntegrationBase {
                 Validate::REQUIRED => true,
                 Validate::NUMERIC => true,
                 Validate::MIN => 17,
-                Validate::MAX => 18
+                Validate::MAX => 20
             ]
         ])->messages([
             'identifier' => [
@@ -118,7 +145,12 @@ class DiscordIntegration extends IntegrationBase {
     }
 
     public function allowLinking(): bool {
-        return Discord::isBotSetup();
+        $link_method = Util::getSetting('integration_link_method', 'bot', 'Discord Integration');
+        if ($link_method == 'oauth') {
+            return NamelessOAuth::getInstance()->isEnabled('discord');
+        } else {
+            return Discord::isBotSetup();
+        }
     }
 
     public function onRegistrationPageLoad(Fields $fields) {
@@ -137,13 +169,14 @@ class DiscordIntegration extends IntegrationBase {
         // Link integration if user registered using discord oauth
         if (Session::exists('oauth_register_data')) {
             $data = json_decode(Session::get('oauth_register_data'), true);
-            if ($data['provider'] == 'discord' && isset($data['data']['username']) && isset($data['data']['discriminator'])) {
+            if ($data['provider'] == 'discord' && isset($data['data']['username'])) {
 
-                $username = $data['data']['username'] . '#' . $data['data']['discriminator'];
+                $username = $data['data']['username'];
                 $discord_id = $data['data']['id'];
                 if ($this->validateIdentifier($discord_id) && $this->validateUsername($username)) {
                     $integrationUser = new IntegrationUser($this);
                     $integrationUser->linkIntegration($user, $discord_id, $username, true);
+                    $integrationUser->verifyIntegration();
                 }
             }
         }

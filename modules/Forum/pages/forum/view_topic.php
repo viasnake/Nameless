@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr13
+ *  NamelessMC version 2.1.0
  *
  *  License: MIT
  *
@@ -273,9 +273,10 @@ if (Input::exists()) {
             // Get last post ID
             $last_post_id = DB::getInstance()->lastId();
             $content = EventHandler::executeEvent('prePostCreate', [
+                'alert_full' => ['path' => ROOT_PATH . '/modules/Forum/language', 'file' => 'forum', 'term' => 'user_tag_info', 'replace' => '{{author}}', 'replace_with' => $user->getDisplayname()],
+                'alert_short' => ['path' => ROOT_PATH . '/modules/Forum/language', 'file' => 'forum', 'term' => 'user_tag'],
+                'alert_url' => URL::build('/forum/topic/' . urlencode($tid), 'pid=' . urlencode($last_post_id)),
                 'content' => $content,
-                'post_id' => $last_post_id,
-                'topic_id' => $tid,
                 'user' => $user,
             ])['content'];
 
@@ -295,28 +296,15 @@ if (Input::exists()) {
 
             // Execute hooks and pass $available_hooks
             // TODO: This gets hooks only for this specific forum, not any of its parents...
-            $default_forum_language = new Language(ROOT_PATH . '/modules/Forum/language', DEFAULT_LANGUAGE);
-            $available_hooks = DB::getInstance()->get('forums', ['id', $topic->forum_id])->results();
-            $available_hooks = json_decode($available_hooks[0]->hooks);
-            EventHandler::executeEvent('topicReply', [
-                'user_id' => $user->data()->id,
-                'username' => $user->data()->username,
-                'nickname' => $user->data()->nickname,
-                'content' => $default_forum_language->get('forum', 'new_reply_in_topic', [
-                    'topic' => $topic->topic_title,
-                    'author' => $user->getDisplayname(),
-                ]),
-                'content_full' => strip_tags(str_ireplace(['<br />', '<br>', '<br/>'], "\r\n", $content)),
-                'avatar_url' => $user->getAvatar(128, true),
-                'title' => $topic->topic_title,
-                'url' => Util::getSelfURL() . ltrim(URL::build('/forum/topic/' . urlencode($topic->id) . '-' . $forum->titleToURL($topic->topic_title)), '/'),
-                'topic_author_user_id' => $topic_user->data()->id,
-                'topic_author_username' => $topic_user->data()->username,
-                'topic_author_nickname' => $topic_user->data()->nickname,
-                'topic_id' => $tid,
-                'post_id' => $last_post_id,
-                'available_hooks' => $available_hooks == null ? [] : $available_hooks
-            ]);
+            $available_hooks = DB::getInstance()->get('forums', ['id', $topic->forum_id])->first();
+            $available_hooks = json_decode($available_hooks->hooks) ?? [];
+            EventHandler::executeEvent(new TopicReplyCreatedEvent(
+                $user,
+                $topic->topic_title,
+                $content,
+                $tid,
+                $available_hooks,
+            ));
 
             // Alerts + Emails
             $users_following = DB::getInstance()->get('topics_following', ['topic_id', $tid])->results();
@@ -352,20 +340,18 @@ if (Input::exists()) {
                         $language->get('emails', 'forum_topic_reply_subject', ['author' => $user->data()->username, 'topic' => $topic->topic_title]),
                         $language->get('emails', 'greeting'),
                         $language->get('emails', 'forum_topic_reply_message', ['author' => $user->data()->username, 'content' => html_entity_decode($content)]),
-                        rtrim(Util::getSelfURL(), '/') . URL::build('/forum/topic/' . urlencode($tid) . '-' . $forum->titleToURL($topic->topic_title), 'pid=' . $last_post_id),
+                        rtrim(URL::getSelfURL(), '/') . URL::build('/forum/topic/' . urlencode($tid) . '-' . $forum->titleToURL($topic->topic_title), 'pid=' . $last_post_id),
                         $language->get('emails', 'thanks')
                     ],
                     $html
                 );
                 $subject = Output::getClean(SITE_NAME) . ' - ' . $language->get('emails', 'forum_topic_reply_subject', ['author' => $user->data()->username, 'topic' => $topic->topic_title]);
 
-                $reply_to = Email::getReplyTo();
                 foreach ($users_following_info as $user_info) {
                     $sent = Email::send(
-                        ['email' => Output::getClean($user_info['email']), 'name' => Output::getClean($user_info['username'])],
+                        ['email' => $user_info['email'], 'name' => $user_info['username']],
                         $subject,
                         $message,
-                        $reply_to
                     );
 
                     if (isset($sent['error'])) {
@@ -532,9 +518,9 @@ if ($user->isLoggedIn() && $forum->canModerateForum($forum_parent[0]->id, $user_
 $smarty->assign([
     'SHARE' => $forum_language->get('forum', 'share'),
     'SHARE_TWITTER' => $forum_language->get('forum', 'share_twitter'),
-    'SHARE_TWITTER_URL' => 'https://twitter.com/intent/tweet?text=' . urlencode(rtrim(Util::getSelfURL(), '/')) . URL::build('/forum/topic/' . urlencode($tid) . '-' . $forum->titleToURL($topic->topic_title)),
+    'SHARE_TWITTER_URL' => 'https://twitter.com/intent/tweet?text=' . urlencode(rtrim(URL::getSelfURL(), '/')) . URL::build('/forum/topic/' . urlencode($tid) . '-' . $forum->titleToURL($topic->topic_title)),
     'SHARE_FACEBOOK' => $forum_language->get('forum', 'share_facebook'),
-    'SHARE_FACEBOOK_URL' => 'https://www.facebook.com/sharer/sharer.php?u=' . urlencode(rtrim(Util::getSelfURL(), '/')) . URL::build('/forum/topic/' . urlencode($tid) . '-' . $forum->titleToURL($topic->topic_title))
+    'SHARE_FACEBOOK_URL' => 'https://www.facebook.com/sharer/sharer.php?u=' . urlencode(rtrim(URL::getSelfURL(), '/')) . URL::build('/forum/topic/' . urlencode($tid) . '-' . $forum->titleToURL($topic->topic_title))
 ]);
 
 // Pagination
@@ -629,13 +615,16 @@ foreach ($results->data as $n => $nValue) {
     }
 
     // Profile fields
-    $fields = $post_creator->getProfileFields(false, true);
+    $fields = array_map(
+        fn($field): object => (object) ['name' => Output::getClean($field->name), 'value' => $field->purifyValue()],
+        $post_creator->getProfileFields(false, true)
+    );
 
     // User integrations
     $user_integrations = [];
     foreach ($post_creator->getIntegrations() as $key => $integrationUser) {
         if ($integrationUser->data()->username != null && $integrationUser->data()->show_publicly) {
-            $fields[] = [
+            $fields[] = (object) [
                 'name' => Output::getClean($key),
                 'value' => Output::getClean($integrationUser->data()->username)
             ];
@@ -649,9 +638,9 @@ foreach ($results->data as $n => $nValue) {
 
     $forum_placeholders = $post_creator->getForumPlaceholders();
     foreach ($forum_placeholders as $forum_placeholder) {
-        $fields[] = [
-            'name' => $forum_placeholder->friendly_name,
-            'value' => $forum_placeholder->value
+        $fields[] = (object) [
+            'name' => Output::getClean($forum_placeholder->friendly_name),
+            'value' => Output::getClean($forum_placeholder->value),
         ];
     }
 
@@ -686,7 +675,7 @@ foreach ($results->data as $n => $nValue) {
                     'username' => $reaction_user->getDisplayname(true),
                     'nickname' => $reaction_user->getDisplayname(),
                     'style' => $reaction_user->getGroupStyle(),
-                    'avatar' => $reaction_user->getAvatar(500),
+                    'avatar' => $reaction_user->getAvatar(),
                     'profile' => $reaction_user->getProfileURL()
                 ];
             }
@@ -710,7 +699,7 @@ foreach ($results->data as $n => $nValue) {
         'heading' => $heading,
         'id' => $nValue->id,
         'user_id' => $post_creator->data()->id,
-        'avatar' => $post_creator->getAvatar(500),
+        'avatar' => $post_creator->getAvatar(),
         'integrations' => $user_integrations,
         'username' => $post_creator->getDisplayname(),
         'mcname' => $post_creator->getDisplayname(true),
@@ -730,7 +719,7 @@ foreach ($results->data as $n => $nValue) {
         'post_date' => $post_date,
         'buttons' => $buttons,
         'content' => $content,
-        'signature' => Output::getPurified(Util::renderEmojis($signature)),
+        'signature' => Output::getPurified(Text::renderEmojis($signature)),
         'fields' => (empty($fields) ? [] : $fields),
         'edited' => is_null($nValue->last_edited)
             ? null
@@ -751,8 +740,11 @@ if ($user->isLoggedIn()) {
             $reactions = [];
         }
 
-        $smarty->assign('REACTIONS', $reactions);
-        $smarty->assign('REACTIONS_URL', URL::build('/forum/reactions'));
+        $smarty->assign([
+            'LIKE' => $language->get('user', 'like'),
+            'REACTIONS' => $reactions,
+            'REACTIONS_URL' => URL::build('/forum/reactions')
+        ]);
     }
 
     // Following?
@@ -815,7 +807,7 @@ $smarty->assign([
     'INSERT_QUOTES' => $forum_language->get('forum', 'insert_quotes'),
     'FORUM_TITLE' => Output::getClean($forum_parent[0]->forum_title),
     'STARTED_BY' => $forum_language->get('forum', 'started_by_x', [
-        'author' => '<a href="' . $topic_user->getProfileURL() . '" style="' . $topic_user->getGroupClass() . '">' . $topic_user->getDisplayname() . '</a>',
+        'author' => '<a href="' . $topic_user->getProfileURL() . '" style="' . $topic_user->getGroupStyle() . '">' . $topic_user->getDisplayname() . '</a>',
     ]),
     'SUCCESS' => $language->get('general', 'success'),
     'ERROR' => $language->get('general', 'error')
@@ -827,104 +819,21 @@ $template->assets()->include([
 
 if ($user->isLoggedIn()) {
     $template->addJSScript(Input::createTinyEditor($language, 'quickreply', $content, true));
-}
-
-if ($user->isLoggedIn()) {
-    $js = '
-    tinymce.editors[0].execCommand(\'mceInsertContent\', false, \'<blockquote class="blockquote"><a href="\' + resultData[item].link + \'">\' + resultData[item].author_nickname + \':</a><br />\' + resultData[item].content + \'</blockquote><br />\');
-    ';
 
     $template->addJSScript('
-    $(document).ready(function() {
-        if (typeof $.cookie(\'' . $tid . '-quoted\') === \'undefined\') {
-            $("#quoteButton").hide();
-        }
-    });
-
-    // Add post to quoted posts array
-    function quote(post) {
-        var index = quotedPosts.indexOf(post);
-
-        if (index > -1) {
-            quotedPosts.splice(index, 1);
-
-            $(\'body\').toast({
-                showIcon: \'info circle icon\',
-                message: \'' . $forum_language->get('forum', 'removed_quoted_post') . '\',
-                class: \'info\',
-                progressUp: true,
-                displayTime: 6000,
-                showProgress: \'bottom\',
-                pauseOnHover: false,
-                position: \'bottom left\',
-            });
-        }
-        else {
-            quotedPosts.push(post);
-
-            $(\'body\').toast({
-                showIcon: \'info circle icon\',
-                message: \'' . $forum_language->get('forum', 'quoted_post') . '\',
-                class: \'info\',
-                progressUp: true,
-                displayTime: 6000,
-                showProgress: \'bottom\',
-                pauseOnHover: false,
-                position: \'bottom left\',
-            });
-        }
-
-        if (quotedPosts.length == 0) {
-            // Delete cookie
-            $.removeCookie(\'' . $tid . '-quoted\');
-
-            // Hide insert quote button
-            $("#quoteButton").hide();
-        } else {
-            // Create cookie
-            $.cookie(\'' . $tid . '-quoted\', JSON.stringify(quotedPosts));
-
-            // Show insert quote button
-            $("#quoteButton").show();
-        }
-    }
-
-    // Insert quoted posts to editor
-    function insertQuotes() {
-        var postData = {
-            "posts": JSON.parse($.cookie(\'' . $tid . '-quoted\')),
-            "topic": ' . $tid . '
-        };
-
-        $(\'body\').toast({
-            showIcon: \'info circle icon\',
-            message: \'' . $forum_language->get('forum', 'quoting_posts') . '\',
-            class: \'info\',
-            progressUp: true,
-            displayTime: 6000,
-            showProgress: \'bottom\',
-            pauseOnHover: false,
-            position: \'bottom left\',
-        });
-
-        var getQuotes = $.ajax({
-              type: "POST",
-              url: "' . URL::build('/forum/get_quotes') . '",
-              data: postData,
-              dataType: "json",
-              success: function(resultData) {
-                  for(var item in resultData) {
-                      if (resultData.hasOwnProperty(item)) {
-                      ' . $js . '
-                      }
-                  }
-
-                  // Remove cookie containing quoted posts, and hide quote button
-                  $.removeCookie(\'' . $tid . '-quoted\');
-                  $("#quoteButton").hide();
-              },
-              error: function(data) {
-                  $(\'body\').toast({
+    function quote(post) {        
+        $.ajax({
+            type: "GET",
+            url: "' . URL::build('/forum/get_quotes') . '",
+            data: {
+                "post": post,
+            },
+            dataType: "json",
+            success: function(response) {
+                tinymce.editors[0].execCommand(\'mceInsertContent\', false, \'<blockquote class="blockquote"><a href="\' + response.link + \'">\' + response.author_nickname + \':</a><br />\' + response.content + \'</blockquote><br />\');
+            },
+            error: function(data) {
+                $(\'body\').toast({
                     showIcon: \'exclamation triangle icon\',
                     message: \'' . $forum_language->get('forum', 'error_quoting_posts') . '\',
                     class: \'danger\',
@@ -934,8 +843,19 @@ if ($user->isLoggedIn()) {
                     pauseOnHover: false,
                     position: \'bottom left\',
                 });
-              }
-        });
+            }
+         });
+
+         $(\'body\').toast({
+            showIcon: \'info circle icon\',
+            message: \'' . $forum_language->get('forum', 'quoted_post') . '\',
+            class: \'info\',
+            progressUp: true,
+            displayTime: 6000,
+            showProgress: \'bottom\',
+            pauseOnHover: false,
+            position: \'bottom left\',
+         });
     }
     ');
 }

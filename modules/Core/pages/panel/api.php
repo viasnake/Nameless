@@ -30,17 +30,8 @@ if (!isset($_GET['view'])) {
                 // Generate new key
                 $new_api_key = SecureRandom::alphanumeric();
 
-                $plugin_api = DB::getInstance()->get('settings', ['name', 'mc_api_key'])->results();
-                $plugin_api = $plugin_api[0]->id;
-
                 // Update key
-                DB::getInstance()->update(
-                    'settings',
-                    $plugin_api,
-                    [
-                        'value' => $new_api_key
-                    ]
-                );
+                Util::setSetting('mc_api_key', $new_api_key);
 
                 // Cache
                 file_put_contents(ROOT_PATH . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR . sha1('apicache') . '.cache', $new_api_key);
@@ -50,22 +41,14 @@ if (!isset($_GET['view'])) {
                 Redirect::to(URL::build('/panel/core/api'));
             }
 
-            $plugin_id = DB::getInstance()->get('settings', ['name', 'use_api'])->results();
-            $plugin_id = $plugin_id[0]->id;
-            DB::getInstance()->update(
-                'settings',
-                $plugin_id,
-                [
-                    'value' => Input::get('enable_api')
-                ]
-            );
+            Util::setSetting('use_api', Input::get('enable_api'));
 
             // Update Username sync
             $username_sync = isset($_POST['username_sync']) && $_POST['username_sync'] == 'on' ? '1' : '0';
             Util::setSetting('username_sync', $username_sync);
 
             Session::flash('api_success', $language->get('admin', 'api_settings_updated_successfully'));
-
+            Redirect::to(URL::build('/panel/core/api'));
             //Log::getInstance()->log(Log::Action('admin/api/change'));
         } else {
             $errors[] = $language->get('general', 'invalid_token');
@@ -82,36 +65,28 @@ if (!isset($_GET['view'])) {
 
                 $external = false;
                 $fields = [];
-
-                foreach (GroupSyncManager::getInstance()->getEnabledInjectors() as $injector) {
-                    if (
-                        $injector->getColumnName() == GroupSyncManager::getInstance()->getInjectorByClass(NamelessMCGroupSyncInjector::class)->getColumnName()
-                    ) {
-                        $fields[$injector->getColumnName()] = $_POST[$injector->getColumnName()];
+                $nameless_injector_column = GroupSyncManager::getInstance()->getInjectorByClass(NamelessMCGroupSyncInjector::class)->getColumnName();
+                foreach (GroupSyncManager::getInstance()->getEnabledInjectors() as $column_name => $injector) {
+                    if (!$_POST[$column_name]) {
                         continue;
                     }
 
-                    if ($_POST[$injector->getColumnName()]) {
-                        if ($_POST[$injector->getColumnName()] == 0) {
-                            continue;
-                        }
+                    $fields[$column_name] = $_POST[$column_name];
 
-                        $fields[$injector->getColumnName()] = $_POST[$injector->getColumnName()];
+                    if ($column_name !== $nameless_injector_column) {
                         $external = true;
                     }
                 }
 
                 if (!$external) {
                     $errors[] = $language->get('admin', 'at_least_one_external');
+                } else if ($validation->passed()) {
+
+                    DB::getInstance()->insert('group_sync', $fields);
+                    Session::flash('api_success', $language->get('admin', 'group_sync_rule_created_successfully'));
+
                 } else {
-                    if ($validation->passed()) {
-
-                        DB::getInstance()->insert('group_sync', $fields);
-                        Session::flash('api_success', $language->get('admin', 'group_sync_rule_created_successfully'));
-
-                    } else {
-                        $errors = $validation->errors();
-                    }
+                    $errors = $validation->errors();
                 }
             } else {
                 if ($_POST['action'] == 'update') {
@@ -197,16 +172,7 @@ if (isset($errors) && count($errors)) {
 
 if (!isset($_GET['view'])) {
     // Is the API enabled?
-    $api_enabled = DB::getInstance()->get('settings', ['name', 'use_api'])->results();
-    if (count($api_enabled)) {
-        $api_enabled = $api_enabled[0]->value;
-    } else {
-        DB::getInstance()->insert('settings', [
-            'name' => 'use_api',
-            'value' => false,
-        ]);
-        $api_enabled = '0';
-    }
+    $api_enabled = Util::getSetting('use_api');
 
     $smarty->assign(
         [
@@ -233,7 +199,7 @@ if (!isset($_GET['view'])) {
             'NO' => $language->get('general', 'no'),
             'CHANGE' => $language->get('general', 'change'),
             'API_URL' => $language->get('admin', 'api_url'),
-            'API_URL_VALUE' => rtrim(Util::getSelfURL(), '/') . rtrim(URL::build('/api/v2/', '', 'non-friendly'), '/'),
+            'API_URL_VALUE' => rtrim(URL::getSelfURL(), '/') . rtrim(URL::build('/api/v2/', '', 'non-friendly'), '/'),
             'ENABLE_API_FOR_URL' => $language->get('admin', 'api_disabled'),
             'COPY' => $language->get('admin', 'copy'),
             'USERNAME_SYNC' => $language->get('admin', 'enable_username_sync'),

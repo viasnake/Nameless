@@ -30,9 +30,7 @@ if (Input::exists()) {
         // Process input
         if (isset($_POST['enable_registration'])) {
             // Either enable or disable registration
-            DB::getInstance()->update('settings', ['name', 'registration_enabled'], [
-                'value' => Input::get('enable_registration')
-            ]);
+            Util::setSetting('registration_enabled', Input::get('enable_registration'));
         } else {
             // Registration settings
 
@@ -62,44 +60,32 @@ if (Input::exists()) {
 
                 // Validate captcha key and secret key
                 if (!empty(Input::get('recaptcha_key')) || !empty(Input::get('recaptcha_secret')) || Input::get('enable_recaptcha') == 1 || Input::get('enable_recaptcha_login') == 1) {
+                    CaptchaBase::setActiveProvider(Input::get('captcha_type'));
+
                     $provider = CaptchaBase::getActiveProvider();
                     if ($provider->validateSecret(Input::get('recaptcha_secret')) == false || $provider->validateKey(Input::get('recaptcha')) == false) {
-                        $errors[] = $language->get('admin', 'invalid_recaptcha_settings', [
-                            'recaptchaProvider' => Util::bold(Input::get('captcha_type'))
+                        $captcha_warning = $language->get('admin', 'invalid_recaptcha_settings', [
+                            'recaptchaProvider' => Text::bold(Input::get('captcha_type'))
                         ]);
-
-                    } else {
-                        Util::setSetting('recaptcha_key', Input::get('recaptcha'));
-                        Util::setSetting('recaptcha_secret', Input::get('recaptcha_secret'));
                     }
+
+                    Util::setSetting('recaptcha_key', Input::get('recaptcha'));
+                    Util::setSetting('recaptcha_secret', Input::get('recaptcha_secret'));
+
                 } else if (empty(Input::get('recaptcha_key')) && empty(Input::get('recaptcha_secret'))) {
                     Util::setSetting('recaptcha_key', '');
                     Util::setSetting('recaptcha_secret', '');
                 }
 
-                // Can enable captcha?
-                if (!count($errors)) {
-                    Util::setSetting('recaptcha', (isset($_POST['enable_recaptcha']) && $_POST['enable_recaptcha'] == '1') ? '1' : '0');
-                    Util::setSetting('recaptcha_login', (isset($_POST['enable_recaptcha_login']) && $_POST['enable_recaptcha_login'] == '1') ? '1' : '0');
+                Util::setSetting('recaptcha', (isset($_POST['enable_recaptcha']) && $_POST['enable_recaptcha'] == '1') ? '1' : '0');
+                Util::setSetting('recaptcha_login', (isset($_POST['enable_recaptcha_login']) && $_POST['enable_recaptcha_login'] == '1') ? '1' : '0');
 
-                    // Config value
-                    if (Input::get('enable_recaptcha') == 1 || Input::get('enable_recaptcha_login') == 1) {
-                        if (is_writable(ROOT_PATH . '/' . implode(DIRECTORY_SEPARATOR, ['core', 'config.php']))) {
-                            // Require config
-                            if (isset($path) && file_exists($path . 'core/config.php')) {
-                                $loadedConfig = json_decode(file_get_contents($path . 'core/config.php'), true);
-                            } else {
-                                $loadedConfig = json_decode(file_get_contents(ROOT_PATH . '/core/config.php'), true);
-                            }
-
-                            if (is_array($loadedConfig)) {
-                                $GLOBALS['config'] = $loadedConfig;
-                            }
-
-                            Config::set('core/captcha', true);
-                        } else {
-                            $errors = [$language->get('admin', 'config_not_writable')];
-                        }
+                // Config value
+                if (Input::get('enable_recaptcha') == 1 || Input::get('enable_recaptcha_login') == 1) {
+                    if (is_writable(ROOT_PATH . '/' . implode(DIRECTORY_SEPARATOR, ['core', 'config.php']))) {
+                        Config::set('core.captcha', true);
+                    } else {
+                        $errors = [$language->get('admin', 'config_not_writable')];
                     }
                 }
 
@@ -111,7 +97,8 @@ if (Input::exists()) {
         }
 
         if (!count($errors)) {
-            $success = $language->get('admin', 'registration_settings_updated');
+            Session::flash('registration_success', $language->get('admin', 'registration_settings_updated'));
+            Redirect::to(URL::build('/panel/core/registration'));
         }
     } else {
         // Invalid token
@@ -122,10 +109,21 @@ if (Input::exists()) {
 // Load modules + template
 Module::loadPage($user, $pages, $cache, $smarty, [$navigation, $cc_nav, $staffcp_nav], $widgets, $template);
 
+if (Session::exists('registration_success')) {
+    $success = Session::flash('registration_success');
+}
+
 if (isset($success)) {
     $smarty->assign([
         'SUCCESS' => $success,
         'SUCCESS_TITLE' => $language->get('general', 'success')
+    ]);
+}
+
+if (isset($captcha_warning)) {
+    $smarty->assign([
+        'CAPTCHA_WARNINGS' => [$captcha_warning, $language->get('admin', 'invalid_recaptcha_settings_info')],
+        'WARNING' => $language->get('general', 'warning')
     ]);
 }
 
@@ -137,8 +135,7 @@ if (isset($errors) && count($errors)) {
 }
 
 // Check if registration is enabled
-$registration_enabled = DB::getInstance()->get('settings', ['name', 'registration_enabled'])->results();
-$registration_enabled = $registration_enabled[0]->value;
+$registration_enabled = Util::getSetting('registration_enabled');
 
 // Validation group
 $validation_group = Util::getSetting('validate_user_action');
@@ -163,7 +160,8 @@ foreach (NamelessOAuth::getInstance()->getProviders() as $provider_name => $prov
     $oauth_provider_data[$provider_name] = [
         'enabled' => NamelessOAuth::getInstance()->isEnabled($provider_name),
         'setup' => NamelessOAuth::getInstance()->isSetup($provider_name),
-        'icon' => $provider_data['icon'],
+        'icon' => $provider_data['icon'] ?? null,
+        'logo_url' => $provider_data['logo_url'] ?? null,
         'client_id' => $client_id,
         'client_secret' => $client_secret,
     ];
@@ -195,6 +193,10 @@ $smarty->assign([
         'docLinkStart' => '<a href="https://docs.namelessmc.com/en/oauth" target="_blank">',
         'docLinkEnd' => '</a>'
     ]),
+    'REDIRECT_URL' => $language->get('admin', 'redirect_url'),
+    'CLIENT_ID' => $language->get('admin', 'client_id'),
+    'CLIENT_SECRET' => $language->get('admin', 'client_secret'),
+    'OAUTH_URL' => rtrim(URL::getSelfURL(), '/') . URL::build('/oauth', 'provider={{provider}}', 'non-friendly'),
     'PARENT_PAGE' => PARENT_PAGE,
     'DASHBOARD' => $language->get('admin', 'dashboard'),
     'CONFIGURATION' => $language->get('admin', 'configuration'),

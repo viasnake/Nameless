@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr9
+ *  NamelessMC version 2.0.2
  *
  *  License: MIT
  *
@@ -21,21 +21,28 @@ $page_title = $language->get('admin', 'email_errors');
 require_once(ROOT_PATH . '/core/templates/backend_init.php');
 
 if (isset($_GET['do'])) {
-    if ($_GET['do'] == 'purge') {
-        // Purge all errors
+    if (in_array($_GET['do'], ['delete', 'purge'])) {
+        if (Token::check()) {
+            if ($_GET['do'] == 'purge') {
+                // Purge all errors
 
-        DB::getInstance()->delete('email_errors', ['id', '<>', 0]);
+                DB::getInstance()->delete('email_errors', ['id', '<>', 0]);
 
-        Session::flash('emails_errors_success', $language->get('admin', 'email_errors_purged_successfully'));
-        Redirect::to(URL::build('/panel/core/emails/errors'));
-    }
+                Session::flash('emails_errors_success', $language->get('admin', 'email_errors_purged_successfully'));
+                Redirect::to(URL::build('/panel/core/emails/errors'));
+            }
 
-    if ($_GET['do'] == 'delete' && isset($_GET['id']) && is_numeric($_GET['id'])) {
+            if ($_GET['do'] == 'delete' && isset($_GET['id']) && is_numeric($_GET['id'])) {
 
-        DB::getInstance()->delete('email_errors', ['id', $_GET['id']]);
+                DB::getInstance()->delete('email_errors', ['id', $_GET['id']]);
 
-        Session::flash('emails_errors_success', $language->get('admin', 'error_deleted_successfully'));
-        Redirect::to(URL::build('/panel/core/emails/errors'));
+                Session::flash('emails_errors_success', $language->get('admin', 'error_deleted_successfully'));
+                Redirect::to(URL::build('/panel/core/emails/errors'));
+            }
+        } else {
+            Session::flash('emails_errors_error', $language->get('general', 'invalid_token'));
+            Redirect::to(URL::build('/panel/core/emails/errors'));
+        }
     }
 
     if ($_GET['do'] == 'view' && isset($_GET['id']) && is_numeric($_GET['id'])) {
@@ -71,7 +78,7 @@ if (isset($_GET['do'])) {
             'BACK_LINK' => URL::build('/panel/core/emails/errors'),
             'VIEWING_ERROR' => $language->get('admin', 'viewing_email_error'),
             'USERNAME' => $language->get('user', 'username'),
-            'USERNAME_VALUE' => Output::getClean($user->idToName($error->user_id)),
+            'USERNAME_VALUE' => $error->user_id ? Output::getClean($user->idToName($error->user_id)) : $language->get('general', 'deleted_user'),
             'DATE' => $language->get('general', 'date'),
             'DATE_VALUE' => date(DATE_FORMAT, $error->at),
             'TYPE' => $language->get('admin', 'type'),
@@ -89,7 +96,7 @@ if (isset($_GET['do'])) {
             'CLOSE' => $language->get('general', 'close')
         ]);
 
-        if ($error->type == 1) {
+        if ($error->type == Email::REGISTRATION) {
             $user_validated = DB::getInstance()->get('users', ['id', $error->user_id])->results();
             if (count($user_validated)) {
                 $user_validated = $user_validated[0];
@@ -100,18 +107,16 @@ if (isset($_GET['do'])) {
                     ]);
                 }
             }
-        } else {
-            if ($error->type == 4) {
-                $user_error = DB::getInstance()->get('users', ['id', $error->user_id])->results();
-                if (count($user_error)) {
-                    $user_error = $user_error[0];
-                    if ($user_error->active == 0 && !is_null($user_error->reset_code)) {
-                        $smarty->assign([
-                            'REGISTRATION_LINK' => $language->get('admin', 'registration_link'),
-                            'SHOW_REGISTRATION_LINK' => $language->get('admin', 'show_registration_link'),
-                            'REGISTRATION_LINK_VALUE' => rtrim(Util::getSelfURL(), '/') . URL::build('/complete_signup/', 'c=' . urlencode($user_error->reset_code))
-                        ]);
-                    }
+        } else if ($error->type == Email::API_REGISTRATION) {
+            $user_error = DB::getInstance()->get('users', ['id', $error->user_id])->results();
+            if (count($user_error)) {
+                $user_error = $user_error[0];
+                if ($user_error->active == 0 && !is_null($user_error->reset_code)) {
+                    $smarty->assign([
+                        'REGISTRATION_LINK' => $language->get('admin', 'registration_link'),
+                        'SHOW_REGISTRATION_LINK' => $language->get('admin', 'show_registration_link'),
+                        'REGISTRATION_LINK_VALUE' => rtrim(URL::getSelfURL(), '/') . URL::build('/complete_signup/', 'c=' . urlencode($user_error->reset_code))
+                    ]);
                 }
             }
         }
@@ -156,8 +161,8 @@ if (isset($_GET['do'])) {
     if (count($email_errors)) {
         $template_errors = [];
 
-        foreach ($results->data as $nValue) {
-            switch ($nValue->type) {
+        foreach ($results->data as $error) {
+            switch ($error->type) {
                 case Email::REGISTRATION:
                     $type = $language->get('admin', 'registration_email');
                     break;
@@ -180,10 +185,10 @@ if (isset($_GET['do'])) {
 
             $template_errors[] = [
                 'type' => $type,
-                'date' => date(DATE_FORMAT, $nValue->at),
-                'user' => Output::getClean($user->idToName($nValue->user_id)),
-                'view_link' => URL::build('/panel/core/emails/errors/', 'do=view&id=' . $nValue->id),
-                'id' => $nValue->id
+                'date' => date(DATE_FORMAT, $error->at),
+                'user' => $error->user_id ? Output::getClean($user->idToName($error->user_id)) : $language->get('general', 'deleted_user'),
+                'view_link' => URL::build('/panel/core/emails/errors/', 'do=view&id=' . $error->id),
+                'id' => $error->id
             ];
         }
 
@@ -218,6 +223,10 @@ if (Session::exists('emails_errors_success')) {
     ]);
 }
 
+if (Session::exists('emails_errors_error')) {
+    $errors = [Session::flash('emails_errors_error')];
+}
+
 if (isset($errors) && count($errors)) {
     $smarty->assign([
         'ERRORS' => $errors,
@@ -233,7 +242,8 @@ $smarty->assign([
     'EMAILS_LINK' => URL::build('/panel/core/emails'),
     'EMAIL_ERRORS' => $language->get('admin', 'email_errors'),
     'PAGE' => PANEL_PAGE,
-    'BACK' => $language->get('general', 'back')
+    'BACK' => $language->get('general', 'back'),
+    'TOKEN' => Token::get(),
 ]);
 
 $template->onPageLoad();

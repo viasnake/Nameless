@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr13
+ *  NamelessMC version 2.1.2
  *
  *  License: MIT
  *
@@ -23,18 +23,11 @@ require_once(ROOT_PATH . '/core/templates/frontend_init.php');
 require_once(ROOT_PATH . '/modules/Core/includes/emails/register.php');
 
 // Check if registration is enabled
-$registration_enabled = DB::getInstance()->get('settings', ['name', 'registration_enabled'])->results();
-$registration_enabled = $registration_enabled[0]->value;
-
-if ($registration_enabled == 0) {
+if (!Util::getSetting('registration_enabled')) {
     // Registration is disabled, display a message
     // Get registration disabled message and assign to Smarty variable
-    $registration_disabled_message = DB::getInstance()->get('settings', ['name', 'registration_disabled_message'])->results();
-    if (count($registration_disabled_message)) {
-        $message = Output::getPurified($registration_disabled_message[0]->value);
-    } else {
-        $message = 'Registration is currently disabled.';
-    }
+    $fallback_message = $language->get('general', 'registration_disabled_message_fallback');
+    $message = Output::getPurified(Util::getSetting('registration_disabled_message', $fallback_message));
 
     $smarty->assign([
         'REGISTRATION_DISABLED' => $message,
@@ -55,15 +48,11 @@ if ($registration_enabled == 0) {
     die();
 }
 
-// Check if Minecraft is enabled
-$minecraft = MINECRAFT;
-
-if ($minecraft == '1') {
+if (Util::getSetting('mc_integration')) {
     // Check if AuthMe is enabled
-    $authme_enabled = DB::getInstance()->get('settings', ['name', 'authme'])->results();
-    $authme_enabled = $authme_enabled[0]->value;
+    $authme_enabled = Util::getSetting('authme');
 
-    if ($authme_enabled == '1') {
+    if ($authme_enabled == 1) {
         // Authme connector
         require(implode(DIRECTORY_SEPARATOR, [ROOT_PATH, 'modules', 'Core', 'pages', 'authme_connector.php']));
         die();
@@ -71,41 +60,6 @@ if ($minecraft == '1') {
 }
 
 // Registration page
-
-if (isset($_GET['step'], $_SESSION['mcassoc'])) {
-    // Get site details for MCAssoc
-    $mcassoc_site_id = SITE_NAME;
-
-    $mcassoc_shared_secret = DB::getInstance()->get('settings', ['name', 'mcassoc_key'])->results();
-    $mcassoc_shared_secret = $mcassoc_shared_secret[0]->value;
-
-    $mcassoc_instance_secret = DB::getInstance()->get('settings', ['name', 'mcassoc_instance'])->results();
-    $mcassoc_instance_secret = $mcassoc_instance_secret[0]->value;
-
-    define('MCASSOC', true);
-
-    // Initialise
-    $mcassoc = new MCAssoc($mcassoc_shared_secret, $mcassoc_site_id, $mcassoc_instance_secret);
-    $mcassoc->enableInsecureMode();
-
-    require(ROOT_PATH . '/core/integration/run_mcassoc.php');
-    die();
-}
-
-// Is UUID linking enabled?
-if ($minecraft == '1') {
-    $uuid_linking = DB::getInstance()->get('settings', ['name', 'uuid_linking'])->results();
-    $uuid_linking = $uuid_linking[0]->value;
-
-    if ($uuid_linking == '1') {
-        // Do we want to verify the user owns the account?
-        $account_verification = DB::getInstance()->get('settings', ['name', 'verify_accounts'])->results();
-        $account_verification = $account_verification[0]->value;
-    }
-} else {
-    $uuid_linking = '0';
-}
-
 $captcha = CaptchaBase::isCaptchaEnabled();
 
 $integrations = Integrations::getInstance();
@@ -220,6 +174,13 @@ if (Input::exists()) {
                 },
             ]);
 
+            // Check if the ip they are trying to register with is banned
+            $ip = HttpUtils::getRemoteAddress();
+            if (DB::getInstance()->get('ip_bans', ['ip', $ip])->count()) {
+                Session::flash('home_error', $language->get('user', 'banned_from_registering'));
+                Redirect::to(URL::build('/'));
+            }
+
             // Check if any integrations wanna modify the validation
             foreach ($integrations->getEnabledIntegrations() as $integration) {
                 $integration->beforeRegistrationValidation($validation);
@@ -238,150 +199,120 @@ if (Input::exists()) {
 
                 // Check if there was any integrations errors
                 if (!isset($integration_errors)) {
-                    // Minecraft user account association
-                    if (isset($account_verification) && $account_verification == '1') {
-                        // MCAssoc enabled
-                        // Get data from database
-                        $mcassoc_site_id = SITE_NAME;
+                    $user = new User();
 
-                        $mcassoc_shared_secret = DB::getInstance()->get('settings', ['name', 'mcassoc_key'])->results();
-                        $mcassoc_shared_secret = $mcassoc_shared_secret[0]->value;
-
-                        $mcassoc_instance_secret = DB::getInstance()->get('settings', ['name', 'mcassoc_instance'])->results();
-                        $mcassoc_instance_secret = $mcassoc_instance_secret[0]->value;
-
-                        define('MCASSOC', true);
-
-                        // Hash password first
-                        $password = password_hash($_POST['password'], PASSWORD_BCRYPT, ['cost' => 13]);
-                        $_SESSION['password'] = $password;
-                        unset($_POST['password']);
-
-                        // Initialise
-                        $mcassoc = new MCAssoc($mcassoc_shared_secret, $mcassoc_site_id, $mcassoc_instance_secret);
-                        $mcassoc->enableInsecureMode();
-
-                        require(ROOT_PATH . '/core/integration/run_mcassoc.php');
-
-                    } else {
-                        // Disabled
-                        $user = new User();
-
-                        $ip = Util::getRemoteAddress();
-                        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-                            // TODO: Invalid IP, do something
-                        }
-
-                        $password = password_hash(Input::get('password'), PASSWORD_BCRYPT, ['cost' => 13]);
-                        // Get current unix time
-                        $date = new DateTime();
-                        $date = $date->getTimestamp();
-
-                        // Generate validation code
-                        $code = SecureRandom::alphanumeric();
-
-                        // Get default language ID before creating user
-                        $language_id = DB::getInstance()->get('languages', ['short_code', LANGUAGE])->results();
-
-                        if (count($language_id)) {
-                            $language_id = $language_id[0]->id;
-                        } else {
-                            // fallback to EnglishUK
-                            $language_id = DB::getInstance()->get('languages', ['short_code', 'en_UK'])->results();
-                            $language_id = $language_id[0]->id;
-                        }
-
-                        // Get default group ID
-                        $cache->setCache('default_group');
-                        if ($cache->isCached('default_group')) {
-                            $default_group = $cache->retrieve('default_group');
-                        } else {
-                            $default_group = Group::find(1, 'default_group')->id;
-
-                            $cache->store('default_group', $default_group);
-                        }
-
-                        $timezone = TIMEZONE;
-                        $auto_timezone = Input::get('timezone');
-                        if ($auto_timezone && in_array($auto_timezone, DateTimeZone::listIdentifiers())) {
-                            $timezone = $auto_timezone;
-                        }
-
-                        // Create user
-                        $user->create([
-                            'username' => $username,
-                            'nickname' => $nickname,
-                            'password' => $password,
-                            'pass_method' => 'default',
-                            'joined' => $date,
-                            'email' => Input::get('email'),
-                            'reset_code' => $code,
-                            'lastip' => $ip,
-                            'last_online' => $date,
-                            'language_id' => $language_id,
-                            'timezone' => $timezone,
-                        ]);
-
-                        // Get user ID
-                        $user_id = DB::getInstance()->lastId();
-
-                        $user = new User($user_id);
-                        $user->addGroup($default_group);
-
-                        foreach ($integrations->getEnabledIntegrations() as $integration) {
-                            $integration->successfulRegistration($user);
-                        }
-
-                        if (Session::exists('oauth_register_data')) {
-                            $data = json_decode(Session::get('oauth_register_data'), true);
-                            NamelessOAuth::getInstance()->saveUserProvider(
-                                $user_id,
-                                $data['provider'],
-                                $data['id'],
-                            );
-                            Session::delete('oauth_register_data');
-                        }
-
-                        // Custom Fields
-                        foreach ($_POST['profile_fields'] as $field_id => $value) {
-                            if (!empty($value)) {
-                                // Insert custom field
-                                DB::getInstance()->insert('users_profile_fields', [
-                                    'user_id' => $user_id,
-                                    'field_id' => $field_id,
-                                    'value' => $value,
-                                    'updated' => date('U'),
-                                ]);
-                            }
-                        }
-
-                        Log::getInstance()->log(Log::Action('user/register'), '', $user_id);
-
-                        $default_language = new Language('core', DEFAULT_LANGUAGE);
-                        EventHandler::executeEvent('registerUser', [
-                            'user_id' => $user_id,
-                            'username' => Input::get('username'),
-                            'content' => $default_language->get('user', 'user_x_has_registered', [
-                                'user' => Input::get('username'),
-                            ]),
-                            'avatar_url' => $user->getAvatar(128, true),
-                            'url' => Util::getSelfURL() . ltrim(URL::build('/profile/' . urlencode(Input::get('username'))), '/'),
-                            'language' => $default_language,
-                        ]);
-
-                        if (Util::getSetting('email_verification') === '1') {
-                            // Send registration email
-                            sendRegisterEmail($language, Output::getClean(Input::get('email')), $username, $user_id, $code);
-
-                            Session::flash('home', $language->get('user', 'registration_check_email'));
-                        } else {
-                            // Redirect straight to verification link
-                            Redirect::to(URL::build('/validate/', 'c=' . urlencode($code)));
-                        }
-
-                        Redirect::to(URL::build('/'));
+                    $ip = HttpUtils::getRemoteAddress();
+                    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+                        // TODO: Invalid IP, do something
                     }
-                    die();
+
+                    $password = password_hash(Input::get('password'), PASSWORD_BCRYPT, ['cost' => 13]);
+
+                    // Generate validation code
+                    $code = SecureRandom::alphanumeric();
+
+                    // Get default language ID before creating user
+                    $language_id = DB::getInstance()->get('languages', ['short_code', LANGUAGE])->results();
+
+                    if (count($language_id)) {
+                        $language_id = $language_id[0]->id;
+                    } else {
+                        // fallback to EnglishUK
+                        $language_id = DB::getInstance()->get('languages', ['short_code', 'en_UK'])->results();
+                        $language_id = $language_id[0]->id;
+                    }
+
+                    // Get default group ID
+                    $cache->setCache('default_group');
+                    if ($cache->isCached('default_group')) {
+                        $default_group = $cache->retrieve('default_group');
+                    } else {
+                        $default_group = Group::find(1, 'default_group')->id;
+
+                        $cache->store('default_group', $default_group);
+                    }
+
+                    $timezone = TIMEZONE;
+                    $auto_timezone = Input::get('timezone');
+                    if ($auto_timezone && in_array($auto_timezone, DateTimeZone::listIdentifiers())) {
+                        $timezone = $auto_timezone;
+                    }
+
+                    $register_method = 'nameless';
+                    if (Session::exists('oauth_register_data')) {
+                        $data = json_decode(Session::get('oauth_register_data'), true);
+                        $register_method = 'oauth_' . $data['provider'];
+                    }
+
+                    // Create user
+                    $user->create([
+                        'username' => $username,
+                        'nickname' => $nickname,
+                        'password' => $password,
+                        'pass_method' => 'default',
+                        'joined' => date('U'),
+                        'email' => Input::get('email'),
+                        'reset_code' => $code,
+                        'lastip' => $ip,
+                        'last_online' => date('U'),
+                        'language_id' => $language_id,
+                        'timezone' => $timezone,
+                        'register_method' => $register_method,
+                    ]);
+
+                    // Get user ID
+                    $user_id = DB::getInstance()->lastId();
+
+                    $user = new User($user_id);
+                    $user->addGroup($default_group);
+
+                    foreach ($integrations->getEnabledIntegrations() as $integration) {
+                        $integration->successfulRegistration($user);
+                    }
+
+                    if (Session::exists('oauth_register_data')) {
+                        $data = json_decode(Session::get('oauth_register_data'), true);
+                        NamelessOAuth::getInstance()->saveUserProvider(
+                            $user_id,
+                            $data['provider'],
+                            $data['id'],
+                        );
+                        $auto_verify_oauth_email = $data['email'] === Input::get('email')
+                            && NamelessOAuth::getInstance()->hasVerifiedEmail($data['provider'], $data['data']);
+
+                        Session::delete('oauth_register_data');
+                    }
+
+                    // Custom Fields
+                    foreach ($_POST['profile_fields'] as $field_id => $value) {
+                        if (!empty($value)) {
+                            // Insert custom field
+                            DB::getInstance()->insert('users_profile_fields', [
+                                'user_id' => $user_id,
+                                'field_id' => $field_id,
+                                'value' => $value,
+                                'updated' => date('U'),
+                            ]);
+                        }
+                    }
+
+                    Log::getInstance()->log(Log::Action('user/register'), '', $user_id);
+
+                    EventHandler::executeEvent(new UserRegisteredEvent(
+                        $user,
+                    ));
+
+                    if (!$auto_verify_oauth_email && Util::getSetting('email_verification') === '1') {
+                        // Send registration email
+                        sendRegisterEmail($language, Output::getClean(Input::get('email')), $username, $user_id, $code);
+
+                        Session::flash('home', $language->get('user', 'registration_check_email'));
+                    } else {
+                        // Redirect straight to verification link
+                        Redirect::to(URL::build('/validate/', 'c=' . urlencode($code)));
+                    }
+
+                    Redirect::to(URL::build('/'));
                 } else {
                     // Integrations errors
                     $errors = $integration_errors;
@@ -420,9 +351,11 @@ if (Util::getSetting('displaynames') === '1') {
 $username_value = ((isset($_POST['username']) && $_POST['username']) ? Output::getClean(Input::get('username')) : '');
 $email_value = ((isset($_POST['email']) && $_POST['email']) ? Output::getClean(Input::get('email')) : '');
 
-if (Session::exists('oauth_register_data')) {
+if ($email_value === '' && Session::exists('oauth_register_data')) {
     $email_value = json_decode(Session::get('oauth_register_data'), true)['email'];
 }
+
+$smarty->assign('EMAIL_INPUT', $email_value);
 
 $fields->add('username', Fields::TEXT, $language->get('user', 'username'), true, $username_value);
 $fields->add('email', Fields::EMAIL, $language->get('user', 'email_address'), true, $email_value);
@@ -454,9 +387,26 @@ foreach (ProfileField::all() as $field) {
 $oauth_flow = Session::exists('oauth_register_data');
 if ($oauth_flow) {
     $data = json_decode(Session::get('oauth_register_data'), true);
-    $smarty->assign('OAUTH_MESSAGE_CONTINUE', $language->get('general', 'oauth_message_continue', [
-        'provider' => ucfirst($data['provider'])
-    ]));
+    $smarty->assign([
+        'OAUTH_MESSAGE_CONTINUE' => $language->get('general', 'oauth_message_continue', [
+            'provider' => ucfirst($data['provider'])
+        ]),
+        'CANCEL' => $language->get('general', 'cancel'),
+        'OAUTH_CANCEL_REGISTER_URL' => URL::build('/oauth', 'action=cancel_registration'),
+        'OAUTH_EMAIL_VERIFIED' => NamelessOAuth::getInstance()->hasVerifiedEmail($data['provider'], $data['data'])
+            && DB::getInstance()->get('users', ['email', $data['email']])->count() === 0,
+        'OAUTH_EMAIL_ORIGINAL' => $data['email'],
+        'OAUTH_EMAIL_VERIFIED_MESSAGE' => $language->get('general', 'oauth_email_verified_automatically'),
+        'OAUTH_EMAIL_NOT_VERIFIED_MESSAGE' => $language->get('general', 'oauth_email_not_verified_automatically'),
+    ]);
+}
+
+// Add "continue with..." message to provider array
+$providers = NamelessOAuth::getInstance()->getProvidersAvailable();
+foreach ($providers as $name => $provider) {
+    $providers[$name]['continue_with'] = $language->get('user', 'continue_with', [
+        'provider' => ucfirst($name)
+    ]);
 }
 
 // Assign Smarty variables
@@ -477,7 +427,7 @@ $smarty->assign([
     'OR' => $language->get('general', 'or'),
     'OAUTH_FLOW' => $oauth_flow,
     'OAUTH_AVAILABLE' => NamelessOAuth::getInstance()->isAvailable(),
-    'OAUTH_PROVIDERS' => NamelessOAuth::getInstance()->getProvidersAvailable(),
+    'OAUTH_PROVIDERS' => $providers,
 ]);
 
 if ($captcha) {

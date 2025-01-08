@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr13
+ *  NamelessMC version 2.1.0
  *
  *  License: MIT
  *
@@ -41,14 +41,12 @@ if (isset($_GET['action'])) {
             if ($user_query->active == 0) {
                 $view_user->update([
                     'active' => true,
-                    'reset_code' => ''
+                    'reset_code' => null,
                 ]);
 
-                EventHandler::executeEvent('validateUser', [
-                    'user_id' => $user_query->id,
-                    'username' => $user_query->username,
-                    'language' => $language
-                ]);
+                EventHandler::executeEvent(new UserValidatedEvent(
+                    $view_user,
+                ));
 
                 Session::flash('edit_user_success', $language->get('admin', 'user_validated_successfully'));
             }
@@ -108,7 +106,11 @@ if (Input::exists()) {
                     Validate::REQUIRED => true,
                     Validate::MIN => 3,
                     Validate::MAX => 20
-                ]
+                ],
+                'timezone' => [
+                    Validate::REQUIRED => true,
+                    Validate::TIMEZONE => true
+                ],
             ])->messages([
                 'email' => [
                     Validate::REQUIRED => $language->get('user', 'email_required'),
@@ -116,16 +118,17 @@ if (Input::exists()) {
                 ],
                 'title' => $language->get('admin', 'title_max_64'),
                 'username' => [
-                    Validate::REQUIRED => $language->get('user', 'mcname_required'),
+                    Validate::REQUIRED => $language->get('user', 'username_required'),
                     Validate::UNIQUE => $language->get('user', 'username_already_exists'),
-                    Validate::MIN => $language->get('user', 'mcname_minimum_3'),
-                    Validate::MAX => $language->get('user', 'mcname_maximum_20')
+                    Validate::MIN => $language->get('user', 'username_minimum_3'),
+                    Validate::MAX => $language->get('user', 'username_maximum_20')
                 ],
                 'nickname' => [
                     Validate::REQUIRED => $language->get('user', 'username_required'),
                     Validate::MIN => $language->get('user', 'username_minimum_3'),
                     Validate::MAX => $language->get('user', 'username_maximum_20')
-                ]
+                ],
+                'timezone' => $language->get('general', 'invalid_timezone'),
             ]);
 
             // Does user have any groups selected
@@ -144,12 +147,16 @@ if (Input::exists()) {
                     }
 
                     // Template
-                    $new_template = DB::getInstance()->get('templates', ['id', Input::get('template')])->results();
+                    if (Input::get('template') != 0) {
+                        $new_template = DB::getInstance()->get('templates', ['id', Input::get('template')])->results();
 
-                    if (count($new_template)) {
-                        $new_template = $new_template[0]->id;
+                        if (count($new_template)) {
+                            $new_template = $new_template[0]->id;
+                        } else {
+                            $new_template = $user_query->theme_id;
+                        }
                     } else {
-                        $new_template = $user_query->theme_id;
+                        $new_template = null;
                     }
 
                     // Nicknames?
@@ -167,35 +174,36 @@ if (Input::exists()) {
                         'user_title' => Output::getClean(Input::get('title')),
                         'signature' => $signature,
                         'private_profile' => $private_profile,
+                        'language_id' => Output::getClean(Input::get('language')),
+                        'timezone' => Output::getClean(Input::get('timezone')),
                         'theme_id' => $new_template
                     ]);
 
+                    $group_sync_log = [];
                     if ($view_user->data()->id != $user->data()->id || $user->hasPermission('admincp.groups.self')) {
                         if ($view_user->data()->id == 1 || (isset($_POST['groups']) && count($_POST['groups']))) {
-                            $modified = [];
+                            $user_group_ids = $view_user->getAllGroupIds();
+                            $form_groups = $_POST['groups'] ?? [];
 
-                            // Check for new groups to give them which they dont already have
-                            foreach ($_POST['groups'] as $group_id) {
-                                if (!in_array($group_id, $view_user->getAllGroupIds())) {
+                            // Check for new groups to give them which they don't already have
+                            foreach ($form_groups as $group_id) {
+                                if (!in_array($group_id, $user_group_ids)) {
                                     $view_user->addGroup($group_id);
-                                    $modified[] = $group_id;
                                 }
                             }
 
-                            // Check for groups they had, but werent in the $_POST groups
-                            foreach ($view_user->getAllGroupIds() as $group_id) {
-                                $form_groups = $_POST['groups'] ?? [];
+                            // Check for groups they had, but weren't in the $_POST groups
+                            foreach ($user_group_ids as $group_id) {
                                 if (!in_array($group_id, $form_groups)) {
                                     $view_user->removeGroup($group_id);
-                                    $modified[] = $group_id;
                                 }
                             }
 
-                            // Dispatch the modified groups
+                            // Dispatch groupsync with all of their groups
                             GroupSyncManager::getInstance()->broadcastChange(
                                 $view_user,
                                 NamelessMCGroupSyncInjector::class,
-                                $modified
+                                $view_user->getAllGroupIds(),
                             );
                         }
                     }
@@ -211,19 +219,38 @@ if (Input::exists()) {
                     $errors[] = $language->get('admin', 'select_user_group');
                 }
             }
-        } else {
-            if (Input::get('action') == 'delete') {
-                if ($user_query->id > 1) {
-                    EventHandler::executeEvent('deleteUser', [
-                        'user_id' => $user_query->id,
-                        'username' => $user_query->username,
-                        'email_address' => $user_query->email
-                    ]);
 
-                    Session::flash('users_session', $language->get('admin', 'user_deleted'));
-                }
+        } else if ((Input::get('action') == 'delete') && $user_query->id > 1) {
+                EventHandler::executeEvent(new UserDeletedEvent($view_user));
 
+                Session::flash('users_session', $language->get('admin', 'user_deleted'));
                 Redirect::to(URL::build('/panel/users'));
+        } else if ((Input::get('action') == 'change_password') && $user_query->id > 1 && !$view_user->canViewStaffCP()) {
+            $validation = Validate::check($_POST, [
+                'password' => [
+                    Validate::REQUIRED => true,
+                    Validate::MIN => 6
+                ],
+                'password_again' => [
+                    Validate::MATCHES => 'password'
+                ]
+            ])->messages([
+                'password' => [
+                    Validate::REQUIRED => $language->get('user', 'password_required'),
+                    Validate::MIN => $language->get('user', 'password_minimum_6')
+                ],
+                'password_again' => $language->get('user', 'passwords_dont_match')
+            ]);
+
+            if ($validation->passed()) {
+                $password = Input::get('password');
+                $encrypted_password = password_hash($password, PASSWORD_BCRYPT, ['cost' => 13]);
+                $view_user->update([
+                    'password' => $encrypted_password
+                ]);
+                Session::flash('edit_user_success', $language->get('admin', 'user_password_changed_successfully'));
+            } else {
+                Session::flash('edit_user_error', implode('\n', $validation->errors()));
             }
         }
     } else {
@@ -240,7 +267,7 @@ if (Session::exists('edit_user_error')) {
 }
 
 if (Session::exists('edit_user_warnings')) {
-    $warnings = Session::flash('edit_user_warnings');
+    $warnings = [Session::flash('edit_user_warnings')];
 }
 
 if (isset($success)) {
@@ -279,7 +306,11 @@ if ($user_query->id != 1 && !$view_user->canViewStaffCP()) {
         'ARE_YOU_SURE' => $language->get('general', 'are_you_sure'),
         'CONFIRM_DELETE_USER' => $language->get('admin', 'confirm_user_deletion', ['user' => Output::getClean($user_query->username)]),
         'YES' => $language->get('general', 'yes'),
-        'NO' => $language->get('general', 'no')
+        'NO' => $language->get('general', 'no'),
+
+        'NEW_PASSWORD' => $language->get('user', 'new_password'),
+        'CONFIRM_NEW_PASSWORD' => $language->get('user', 'confirm_new_password'),
+        'CHANGE_PASSWORD' => $language->get('user', 'change_password'),
     ]);
 }
 
@@ -294,8 +325,13 @@ if ($user_query->id == 1 || ($user_query->id == $user->data()->id && !$user->has
 $private_profile = Util::getSetting('private_profile');
 
 $templates = [];
-$templates_query = DB::getInstance()->get('templates', ['id', '<>', 0])->results();
+$templates_query = DB::getInstance()->get('templates', ['enabled', 1])->results();
 
+$templates[] = [
+    'id' => 0,
+    'name' => $language->get('general', 'default'),
+    'active' => $user_query->theme_id === null
+];
 foreach ($templates_query as $item) {
     $templates[] = [
         'id' => Output::getClean($item->id),
@@ -322,6 +358,17 @@ $signature = Output::getPurified($user_query->signature);
 
 $user_groups = $view_user->getAllGroupIds();
 
+// Get languages
+$languages = [];
+$language_query = DB::getInstance()->get('languages', ['id', '<>', 0])->results();
+foreach ($language_query as $item) {
+    $languages[] = [
+        'id' => $item->id,
+        'name' => Output::getClean($item->name),
+        'active' => $user->data()->language_id == $item->id
+    ];
+}
+
 $smarty->assign([
     'PARENT_PAGE' => PARENT_PAGE,
     'DASHBOARD' => $language->get('admin', 'dashboard'),
@@ -346,6 +393,12 @@ $smarty->assign([
     'EMAIL_ADDRESS_VALUE' => Output::getClean($user_query->email),
     'USER_TITLE' => $language->get('admin', 'title'),
     'USER_TITLE_VALUE' => Output::getClean($user_query->user_title),
+    'LANGUAGE' => $language->get('user', 'active_language'),
+    'LANGUAGE_VALUE' => $user_query->language_id,
+    'LANGUAGES' => $languages,
+    'TIMEZONE' => $language->get('user', 'timezone'),
+    'TIMEZONE_VALUE' => $user_query->timezone,
+    'TIMEZONES' => Util::listTimezones(),
     'PRIVATE_PROFILE' => $language->get('user', 'private_profile'),
     'PRIVATE_PROFILE_VALUE' => $user_query->private_profile,
     'PRIVATE_PROFILE_ENABLED' => ($private_profile == 1),
@@ -362,14 +415,14 @@ $smarty->assign([
     'INFO' => $language->get('general', 'info'),
     'ACTIVE_TEMPLATE' => $language->get('user', 'active_template'),
     'NO_ITEM_SELECTED' => $language->get('admin', 'no_item_selected'),
-    'TEMPLATES' => $templates
+    'TEMPLATES' => $templates,
 ]);
 
 $template->assets()->include([
     AssetTree::TINYMCE,
 ]);
 
-$template->addJSScript(Input::createTinyEditor($language, 'InputSignature'));
+$template->addJSScript(Input::createTinyEditor($language, 'InputSignature', null, false, true));
 
 $template->onPageLoad();
 

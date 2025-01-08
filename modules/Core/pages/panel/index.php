@@ -54,14 +54,14 @@ if (count($dashboard_graphs)) {
         unset($dashboard_graph['datasets']);
 
         foreach ($dashboard_graph as $date => $values) {
-            $date = (int)str_replace('_', '', $date);
+            $date = ltrim($date, '_');
 
             if (!array_key_exists($date, $graph['keys'])) {
-                $graph['keys'][$date] = date('Y-m-d', $date);
+                $graph['keys'][$date] = $date;
             }
 
             foreach ($values as $valuekey => $value) {
-                $graph['datasets'][$valuekey]['data'][date('Y-m-d', $date)] = $value;
+                $graph['datasets'][$valuekey]['data'][$date] = $value;
             }
         }
 
@@ -113,10 +113,11 @@ if (!count($news)) {
 // Compatibility
 if ($user->hasPermission('admincp.core.debugging')) {
     $compat_success = [];
+    $compat_warnings = [];
     $compat_errors = [];
 
-    if (PHP_VERSION_ID < 70400) {
-        $compat_errors[] = 'PHP ' . PHP_VERSION;
+    if (PHP_VERSION_ID < 80200) {
+        $compat_warnings[] = 'PHP ' . PHP_VERSION;
     } else {
         $compat_success[] = 'PHP ' . PHP_VERSION;
     }
@@ -155,10 +156,10 @@ if ($user->hasPermission('admincp.core.debugging')) {
     } else {
         $compat_success[] = 'PHP PDO ' . phpversion('PDO');
     }
-    if (!extension_loaded('mysql') && !extension_loaded('mysqlnd')) {
-        $compat_errors[] = 'PHP MySQL';
+    if (!extension_loaded('pdo_mysql')) {
+        $compat_errors[] = 'PHP PDO MySQL';
     } else {
-        $compat_success[] = 'PHP MySQL ' . (extension_loaded('mysql') ? phpversion('mysql') : explode(' ', phpversion('mysqlnd'))[1]);
+        $compat_success[] = 'PHP PDO MySQL ' . phpversion('pdo_mysql');
     }
     $pdo_driver = DB::getInstance()->getPDO()->getAttribute(PDO::ATTR_DRIVER_NAME);
     $pdo_server_version = DB::getInstance()->getPDO()->getAttribute(PDO::ATTR_SERVER_VERSION);
@@ -168,40 +169,51 @@ if ($user->hasPermission('admincp.core.debugging')) {
             $pdo_driver = 'MySQL';
         } else {
             $pdo_driver = 'MariaDB';
-            // MariaDB version strings are displayed as: "<major>.<minor>.<patch>-MariaDB",
+            // MariaDB version strings are displayed as: "<major>.<minor>.<patch>-MariaDB" OR sometimes its "<replication version hack>-<major>.<minor>.<patch>-MariaDB",
             // and we only want the version number.
-            $pdo_server_version = explode('-', $pdo_server_version)[0];
+            preg_match('/(?:.+-)?(.+)?-MariaDB/', $pdo_server_version, $pdo_server_version);
+            $pdo_server_version = $pdo_server_version[1];
         }
     }
 
-    if (($pdo_driver === 'MySQL' && version_compare($pdo_server_version, '5.7', '>=')) ||
-        ($pdo_driver === 'MariaDB' && version_compare($pdo_server_version, '10.3', '>='))) {
+    if (($pdo_driver === 'MySQL' && version_compare($pdo_server_version, '8.0', '>=')) ||
+        ($pdo_driver === 'MariaDB' && version_compare($pdo_server_version, '10.5', '>='))) {
         $compat_success[] = $pdo_driver . ' Server ' . $pdo_server_version;
+    } else if (($pdo_driver === 'MySQL' && version_compare($pdo_server_version, '5.7', '>=')) ||
+        ($pdo_driver === 'MariaDB' && version_compare($pdo_server_version, '10.3', '>='))) {
+        $compat_warnings[] = $pdo_driver . ' Server ' . $pdo_server_version;
     } else {
         $compat_errors[] = $pdo_driver . ' Server ' . $pdo_server_version;
     }
 
-    // Permissions
-    if (!is_writable(ROOT_PATH . '/core/config.php')) {
-        $compat_errors[] = $language->get('installer', 'config_writable');
+    if (HttpUtils::isTrustedProxiesConfigured()) {
+        $compat_success[] = $language->get('admin', 'trusted_proxies_configured');
     } else {
-        $compat_success[] = $language->get('installer', 'config_writable');
+        $compat_errors[] = $language->get('admin', 'trusted_proxies_not_configured', [
+            'linkStart' => '<a href="https://docs.namelessmc.com/trusted-proxies" target="_blank">',
+            'linkEnd' => '</a>',
+        ]);
     }
-    if (!is_writable(ROOT_PATH . '/cache')) {
-        $compat_errors[] = $language->get('installer', 'cache_writable');
-    } else {
-        $compat_success[] = $language->get('installer', 'cache_writable');
+
+    if (HttpUtils::getPort() === 80 && HttpUtils::getProtocol() === 'https') {
+        $compat_errors[] = $language->get('admin', 'https_port_80');
     }
-    if (!is_writable(ROOT_PATH . '/cache/templates_c')) {
-        $compat_errors[] = $language->get('installer', 'template_cache_writable');
-    } else {
-        $compat_success[] = $language->get('installer', 'template_cache_writable');
+
+    if (defined('DEBUGGING') && DEBUGGING) {
+        $compat_errors[] = $language->get('admin', 'debugging_enabled');
+    }
+
+    if ($template->getName() !== 'Default') {
+        $compat_warnings[] = $language->get('admin', 'panel_template_third_party', [
+            'name' => Text::bold($template->getName()),
+        ]);
     }
 
     $smarty->assign([
         'SERVER_COMPATIBILITY' => $language->get('admin', 'server_compatibility'),
         'COMPAT_SUCCESS' => $compat_success,
-        'COMPAT_ERRORS' => $compat_errors
+        'COMPAT_WARNINGS' => $compat_warnings,
+        'COMPAT_ERRORS' => $compat_errors,
     ]);
 }
 
@@ -234,7 +246,7 @@ $smarty->assign([
     'SIDE_ITEMS' => CollectionManager::getEnabledCollection('dashboard_side_items'),
     // TODO: show latest git commit hash?
     'NAMELESS_VERSION' => $language->get('admin', 'running_nameless_version', [
-        'version' => Util::bold(NAMELESS_VERSION)
+        'version' => Text::bold(NAMELESS_VERSION)
     ]),
 ]);
 

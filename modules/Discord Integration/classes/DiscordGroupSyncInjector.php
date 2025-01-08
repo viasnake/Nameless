@@ -2,12 +2,12 @@
 /**
  * Discord group sync injector implementation.
  *
- * @package Modules\Discord Integration
+ * @package Modules\DiscordIntegration
  * @author Aberdeener
- * @version 2.0.0-pr13
+ * @version 2.0.3
  * @license MIT
  */
-class DiscordGroupSyncInjector implements GroupSyncInjector {
+class DiscordGroupSyncInjector implements GroupSyncInjector, BatchableGroupSyncInjector {
 
     public function getModule(): string {
         return 'Discord Integration';
@@ -49,24 +49,32 @@ class DiscordGroupSyncInjector implements GroupSyncInjector {
     public function getValidationRules(): array {
         return [
             Validate::MIN => 18,
-            Validate::MAX => 18,
+            Validate::MAX => 20,
             Validate::NUMERIC => true
         ];
     }
 
     public function getValidationMessages(Language $language): array {
         return [
-            Validate::MIN => Discord::getLanguageTerm('discord_role_id_length'),
-            Validate::MAX => Discord::getLanguageTerm('discord_role_id_length'),
+            Validate::MIN => Discord::getLanguageTerm('discord_role_id_length', ['min' => 18, 'max' => 20]),
+            Validate::MAX => Discord::getLanguageTerm('discord_role_id_length', ['min' => 18, 'max' => 20]),
             Validate::NUMERIC => Discord::getLanguageTerm('discord_role_id_numeric'),
         ];
     }
 
     public function addGroup(User $user, $group_id): bool {
-        return Discord::updateDiscordRoles($user, [$group_id], []) === true;
+        throw new RuntimeException('Batchable injector should not have this called');
     }
 
     public function removeGroup(User $user, $group_id): bool {
-        return Discord::updateDiscordRoles($user, [], [$group_id]) === true;
+        throw new RuntimeException('Batchable injector should not have this called');
+    }
+
+    public function batchAddGroups(User $user, array $group_ids) {
+        return Discord::updateDiscordRoles($user, $group_ids, []);
+    }
+
+    public function batchRemoveGroups(User $user, array $group_ids) {
+        return Discord::updateDiscordRoles($user, [], $group_ids);
     }
 }

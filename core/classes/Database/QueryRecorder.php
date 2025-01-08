@@ -10,7 +10,7 @@
  */
 class QueryRecorder extends Instanceable {
 
-    private array $_query_stack;
+    private array $_query_stack = [];
     private int $_query_stack_num = 1;
 
     /**
@@ -19,7 +19,17 @@ class QueryRecorder extends Instanceable {
      * @return array SQL queries
      */
     public function getSqlStack(): array {
-        return array_reverse($this->_query_stack);
+        $stack = array_reverse($this->_query_stack);
+
+        // Compile queries - replace bound parameters with their values and syntax highlight
+        foreach ($stack as &$query) {
+            $query['sql_query'] = $this->compileQuery(
+                $query['sql_string'],
+                $query['sql_params']
+            );
+        }
+
+        return $stack;
     }
 
     /**
@@ -29,14 +39,17 @@ class QueryRecorder extends Instanceable {
      * @param array $params Bound parameters used in the query
      */
     public function pushQuery(string $sql, array $params): void {
+        if (!Debugging::canViewDetailedError()) {
+            return;
+        }
+
         $backtrace = $this->lastReleventBacktrace();
 
-        // TODO: if/when we have a globally available way to get the logged in user,
-        // check if they're able to view the sql exception page, and don't waste time doing all this if they can't
         $this->_query_stack[] = [
             'number' => $this->_query_stack_num,
             'frame' => ErrorHandler::parseFrame(null, $backtrace['file'], $backtrace['line'], $this->_query_stack_num),
-            'sql_query' => $this->compileQuery($sql, $params)
+            'sql_string' => $sql,
+            'sql_params' => $params,
         ];
 
         $this->_query_stack_num++;
@@ -48,14 +61,14 @@ class QueryRecorder extends Instanceable {
      * @return array debug_backtrace entry
      */
     private function lastReleventBacktrace(): array {
-        $backtrace = debug_backtrace();
+        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
 
         $current_file = $last_file = $backtrace[0]['file'];
         $i = 1;
 
         while (
             $current_file === $last_file
-            || (str_ends_with($backtrace[$i]['file'], 'DB.php') || str_ends_with($backtrace[$i]['file'], 'Queries.php'))
+            || str_ends_with($backtrace[$i]['file'], 'DB.php')
         ) {
             $last_file = $backtrace[$i]['file'];
             $i++;

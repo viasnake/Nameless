@@ -10,17 +10,21 @@ class ServerInfoEndpoint extends KeyAuthEndpoint {
     }
 
     public function execute(Nameless2API $api): void {
-        $api->validateParams($_POST, ['server-id', 'max-memory', 'free-memory', 'allocated-memory', 'tps']);
+        $api->validateParams($_POST, ['server-id']);
         if (!isset($_POST['players'])) {
             $api->throwError(Nameless2API::ERROR_INVALID_POST_CONTENTS, 'players');
         }
 
-        $serverId = $_POST['server-id'];
+        $server_id = $_POST['server-id'];
         // Ensure server exists
-        $server_query = $api->getDb()->get('mc_servers', ['id', $serverId]);
+        $server_query = $api->getDb()->get('mc_servers', ['id', $server_id]);
 
         if (!$server_query->count() || $server_query->first()->bedrock) {
-            $api->throwError(CoreApiErrors::ERROR_INVALID_SERVER_ID, $serverId);
+            $api->throwError(CoreApiErrors::ERROR_INVALID_SERVER_ID, $server_id);
+        }
+
+        if (isset($_POST['verify_command'])) {
+            Util::setSetting('minecraft_verify_command', $_POST['verify_command']);
         }
 
         try {
@@ -60,33 +64,51 @@ class ServerInfoEndpoint extends KeyAuthEndpoint {
             $api->throwError(CoreApiErrors::ERROR_UNABLE_TO_UPDATE_SERVER_INFO, $e->getMessage(), 500);
         }
 
-        $group_sync_log = [];
+        if (Util::getSetting('mc_integration')) {
+            try {
+                $integration = Integrations::getInstance()->getIntegration('Minecraft');
 
-        try {
-            $integration = Integrations::getInstance()->getIntegration('Minecraft');
+                foreach ($_POST['players'] as $uuid => $player) {
+                    $integrationUser = new IntegrationUser($integration, $uuid, 'identifier');
+                    if ($integrationUser->exists()) {
+                        $this->updateUsername($integrationUser, $player);
 
-            foreach ($_POST['players'] as $uuid => $player) {
-                $integrationUser = new IntegrationUser($integration, $uuid, 'identifier');
-                if ($integrationUser->exists()) {
-                    $this->updateUsername($integrationUser, $player, $api);
-                    $log = $this->updateGroups($integrationUser, $player);
-                    if (count($log)) {
-                        $group_sync_log[] = $log;
-                    }
-
-                    if (isset($player['placeholders']) && count($player['placeholders'])) {
-                        $this->updatePlaceholders($integrationUser->getUser(), $player);
+                        if (isset($player['placeholders']) && count($player['placeholders'])) {
+                            $this->updatePlaceholders($integrationUser->getUser(), $player);
+                        }
                     }
                 }
+            } catch (Exception $e) {
+                $api->throwError(CoreApiErrors::ERROR_UNABLE_TO_UPDATE_SERVER_INFO, $e->getMessage(), 500);
+            }
+        }
+
+        // Server query
+        try {
+            $query_type = Util::getSetting('query_type', 'internal');
+            if ($query_type == 'plugin') {
+                $players_list = [];
+                foreach ($_POST['players'] as $uuid => $player) {
+                    $players_list[] = ['id' => $uuid, 'name' => $player['name']];
+                }
+
+                $cache = new Cache(['name' => 'nameless', 'extension' => '.cache', 'path' => ROOT_PATH . '/cache/']);
+                $cache->setCache('latest_query');
+                $cache->store($server_id, [
+                    'player_count' => count($_POST['players']),
+                    'player_count_max' => $_POST['max_players'],
+                    'player_list' => $players_list,
+                    'motd' => $_POST['motd']
+                ], intval($_POST['interval_seconds'] ?? 10) * 2);
             }
         } catch (Exception $e) {
             $api->throwError(CoreApiErrors::ERROR_UNABLE_TO_UPDATE_SERVER_INFO, $e->getMessage(), 500);
         }
 
-        $api->returnArray(array_merge(['message' => $api->getLanguage()->get('api', 'server_info_updated')], ['log' => $group_sync_log]));
+        $api->returnArray(array_merge(['message' => $api->getLanguage()->get('api', 'server_info_updated')]));
     }
 
-    private function updateUsername(IntegrationUser $integrationUser, array $player, Nameless2API $api): void {
+    private function updateUsername(IntegrationUser $integrationUser, array $player): void {
         if ($player['name'] != $integrationUser->data()->username) {
             $integrationUser->update([
                 'username' => Output::getClean($player['name'])
@@ -95,8 +117,7 @@ class ServerInfoEndpoint extends KeyAuthEndpoint {
 
         if (Util::getSetting('username_sync')) {
             $user = $integrationUser->getUser();
-            if (!$user->exists() ||
-                $player['name'] == $user->data()->username) {
+            if (!$user->exists() || $player['name'] == $user->data()->username) {
                 return;
             }
 
@@ -114,37 +135,9 @@ class ServerInfoEndpoint extends KeyAuthEndpoint {
         }
     }
 
-    private function updateGroups(IntegrationUser $integrationUser, array $player): array {
-        if (!$integrationUser->isVerified()) {
-            return [];
-        }
-
-        $user = $integrationUser->getUser();
-        if (!$user->exists()) {
-            return [];
-        }
-
-        if (!$user->isValidated()) {
-            return [];
-        }
-
-        $log = GroupSyncManager::getInstance()->broadcastChange(
-            $user,
-            MinecraftGroupSyncInjector::class,
-            $player['groups'] ?? []
-        );
-
-        if (count($log)) {
-            Log::getInstance()->log(Log::Action('mc_group_sync/role_set'), json_encode($log), $user->data()->id);
-        }
-
-        return $log;
-    }
-
     private function updatePlaceholders(User $user, $player): void {
         if ($user->exists()) {
             $user->savePlaceholders($_POST['server-id'], $player['placeholders']);
         }
     }
-
 }

@@ -9,11 +9,18 @@ body {
 
 body.pushable>.pusher {
     background: #f3f6fa;
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+}
+
+#wrapper {
+    margin-bottom: 1rem;
 }
 
 /*
-  *  [ NAVIGATION BAR ]
-  */
+   *  [ NAVIGATION BAR ]
+   */
 
 .ui.secondary.menu {
     background: #fff;
@@ -71,8 +78,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ HEADER ]
-  */
+   *  [ HEADER ]
+   */
 
 .ui.masthead {
     background: linear-gradient(90deg, rgb(41, 117, 286) 0%, rgb(2, 117, 216) 100%);
@@ -109,8 +116,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  -[ SEGMENT ]-
-  */
+   *  -[ SEGMENT ]-
+   */
 
 .ui.segment {
     background: #fff;
@@ -130,8 +137,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ NEWS POST ]
-  */
+   *  [ NEWS POST ]
+   */
 
 #news-post .badge,
 #news-post .ui.label {
@@ -146,8 +153,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ FORUM NODE ]
-  */
+   *  [ FORUM NODE ]
+   */
 
 #forum-node #last-post {
     width: 250px;
@@ -158,8 +165,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ FORUM PAGE ]
-  */
+   *  [ FORUM PAGE ]
+   */
 
 #sticky-threads tbody tr td:last-child:not(:first-child),
 #normal-threads tbody tr td:last-child:not(:first-child) {
@@ -187,8 +194,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ TOPIC PAGE ]
-  */
+   *  [ TOPIC PAGE ]
+   */
 
 #topic-post #post-sidebar .ui.small.image,
 #topic-reply #reply-sidebar .ui.small.image {
@@ -264,8 +271,13 @@ body.pushable>.pusher {
     }
 }
 
+#topic-post #post-content {
+    display: flex;
+    flex-direction: column;
+}
+
 #topic-post #post-content #reactions {
-    margin-top: 1rem;
+    margin-top: auto;
     padding: .7em 1.2em .7em 1.2em;
     min-height: 32.5px;
     font-size: .85em;
@@ -295,9 +307,15 @@ body.pushable>.pusher {
     padding-bottom: 1em;
 }
 
+.blockquote {
+    border-left: 2px solid #ccc;
+    margin: 1.5em 10px;
+    padding: 0.5em 10px;
+}
+
 /*
-  *  [ ACCOUNT MESSAGES ]
-  */
+   *  [ ACCOUNT MESSAGES ]
+   */
 
 #view-message #message .header {
     font-size: 1.15rem;
@@ -320,8 +338,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  -[ 404 ERROR ]-
-  */
+   *  -[ 404 ERROR ]-
+   */
 
 #error-403 .ui.container,
 #error-404 .ui.container,
@@ -342,8 +360,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ PROFILE PAGE ]
-  */
+   *  [ PROFILE PAGE ]
+   */
 
 #profile-header {
     background: #fff;
@@ -365,9 +383,18 @@ body.pushable>.pusher {
     right: 1rem;
 }
 
+#profile a.ui.circular.image.avatar img {
+    max-height: 35px;
+}
+
+/* Fix avatar images in labels being a few px from touching the top */
+.ui.image.label img {
+    vertical-align: top !important;
+}
+
 /*
-  *  [ FORUM SEARCH ]
-  */
+   *  [ FORUM SEARCH ]
+   */
 
 #forum-search-result h3.ui.header {
     margin-top: 0;
@@ -375,16 +402,16 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ SERVER PAGE ]
-  */
+   *  [ SERVER PAGE ]
+   */
 
 [id*="server"] #server-players a:not(:last-child) {
     margin-right: .3rem;
 }
 
 /*
-  *  [ WIDGETS ]
-  */
+   *  [ WIDGETS ]
+   */
 
 [id*="widget"] .item .content {
     width: calc(100% - 40px) !important;
@@ -437,11 +464,12 @@ body.pushable>.pusher {
 }
 
 /*
-  *  -[ FOOTER ]-
-  */
+   *  -[ FOOTER ]-
+   */
 
 .ui.footer.segment {
-    margin: 1rem 0 -.5rem 0;
+    position: relative;
+    margin: auto 0 -.5rem 0;
     padding: 3em 0;
 }
 
@@ -451,9 +479,21 @@ body.pushable>.pusher {
     }
 }
 
+.ui.link.list.list .active.item {
+    color: rgba(255, 255, 255, .5);
+}
+
+.ui.link.list.list .active.item a:not(.ui) {
+    color: rgba(0, 0, 0, .87) !important;
+}
+
+.ui.link.list.list .active.item a:not(.ui):hover {
+    background: rgba(0, 0, 0, .05) !important;
+}
+
 /*
-  *  [ TABLE ]
-  */
+   *  [ TABLE ]
+   */
 
 @media (max-width: 576px) {
     .ui.table.res thead tr th:first-child {
@@ -480,8 +520,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  -[ GRID ]-
-  */
+   *  -[ GRID ]-
+   */
 
 .ui.grid+.grid {
     margin-top: 0.3rem;
@@ -502,8 +542,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ LINK LIST ]
-  */
+   *  [ LINK LIST ]
+   */
 
 .ui.link.list.list .item a:not(.ui):hover,
 .ui.link.list.list a.item:hover {
@@ -515,8 +555,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ USES POPUP ]
-  */
+   *  [ USES POPUP ]
+   */
 
 #user-popup .header {
     text-align: center;
@@ -531,8 +571,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ COOKIE NOTICE ]
-  */
+   *  [ COOKIE NOTICE ]
+   */
 
 .cc-window.cc-floating {
     padding: 1rem 1.5rem;
@@ -568,8 +608,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ SPOILER ]
-  */
+   *  [ SPOILER ]
+   */
 
 #tinymce .spoiler,
 .spoiler {
@@ -591,16 +631,16 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ MESSAGE ]
-  */
+   *  [ MESSAGE ]
+   */
 
 .ui.message>.close.icon {
     right: .8em;
 }
 
 /*
-  *  [ UPDATE MESSAGE ]
-  */
+   *  [ UPDATE MESSAGE ]
+   */
 
 #update-message {
     margin-bottom: 1rem;
@@ -626,14 +666,13 @@ body.pushable>.pusher {
     flex: 0 0 auto;
     width: auto;
     line-height: 1;
-    vertical-align: middle;
     font-size: 3em;
     opacity: .8;
 }
 
 /*
-  *  [ PAGINATION ]
-  */
+   *  [ PAGINATION ]
+   */
 
 .ui.mini.pagination.menu .item:first-child,
 .ui.mini.pagination.menu .item:last-child {
@@ -641,8 +680,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  -[ ALIGNMENTS ]-
-  */
+   *  -[ ALIGNMENTS ]-
+   */
 
 [class*="left aligned"] {
     text-align: left;
@@ -657,8 +696,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ FLOATS ]
-  */
+   *  [ FLOATS ]
+   */
 
 [class*="left floated"],
 [class*="res left floated"] {
@@ -696,8 +735,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ DISPLAY ]
-  */
+   *  [ DISPLAY ]
+   */
 
 [display="block"] {
     display: block !important;
@@ -712,8 +751,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ VISIBILITY ]
-  */
+   *  [ VISIBILITY ]
+   */
 
 @media only screen and (max-width: 576px) {
 
@@ -776,8 +815,8 @@ body.pushable>.pusher {
 }
 
 /*
-  *  [ USER BADGES ]
-  */
+   *  [ USER BADGES ]
+   */
 
 .badge {
     display: inline-block;
@@ -895,8 +934,8 @@ a.badge-dark:focus {
 }
 
 /*
-  *  [ OTHER ]
-  */
+   *  [ OTHER ]
+   */
 
 select {
     font-family: Lato, 'Helvetica Neue', Arial, Helvetica, sans-serif;
@@ -931,13 +970,15 @@ select {
     height: auto;
 }
 
-.ui.checkbox .box:before,
-.ui.checkbox label:before {
+#post-content .forum_post {
+    margin-bottom: 1rem;
+}
+
+.ui.checkbox .box:before {
     margin-top: 4px;
 }
 
-.ui.checkbox input:checked~.box:after,
-.ui.checkbox input:checked~label:after {
+.ui.checkbox input:checked~.box:after {
     margin-top: 4px;
 }
 
@@ -958,9 +999,83 @@ select {
     }
 }
 
+#darkmode {
+    display: inline-block;
+}
+
+.darkmode-toggle {
+    opacity: 0;
+    position: absolute;
+}
+
+.darkmode-toggle:checked+.darkmode-toggle-label .darkmode-ball {
+    transform: translateX(24px);
+}
+
+.darkmode-toggle-label {
+    background-color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 50px;
+    position: relative;
+    padding: 5px;
+    height: 26px;
+    width: 50px;
+    cursor: pointer;
+}
+
+.darkmode-ball {
+    background-color: #fff;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    height: 22px;
+    width: 22px;
+    transition: transform 0.2s linear;
+}
+
+.fa-moon {
+    color: #f1c400;
+}
+
+.fa-sun {
+    color: #f39c00;
+}
+
 /*
-  *  [ DARK MODE ]
-  */
+ Member list search images
+ */
+.ui.search>.results .result .image {
+    border-radius: 0;
+}
+
+/*
+ Make new members grid avatars fit nicer
+ */
+#new-members-grid {
+    padding: 0.5em;
+}
+
+#new-members-grid .column {
+    padding: 0.5em;
+}
+
+/*
+ *  [ EMOJI SIZING ]
+ */
+
+.joypixels,
+.twemoji {
+    height: 1em;
+    width: 1em;
+    vertical-align: middle;
+}
+
+/*
+   *  [ DARK MODE ]
+   */
 
 body.dark,
 body.dark>.pusher,
@@ -1019,11 +1134,6 @@ body.dark .ui.dropdown .menu {
     color: rgba(255, 255, 255, 0.6);
 }
 
-body.dark .ui.menu .dropdown.item .menu,
-body.dark .ui.dropdown .menu {
-    min-width: calc(100% - 1px);
-}
-
 body.dark .ui.button,
 body.dark .ui.default.button,
 body.dark .ui.mini.icon.button,
@@ -1065,6 +1175,7 @@ body.dark .ui.form .field .ui.dropdown .menu .item {
 
 body.dark .ui.card,
 body.dark .ui.segment,
+body.dark .ui.segment.attached:not(.basic),
 body.dark .ui.vertical.menu {
     background-color: #303030;
     border: 1px solid rgba(0, 0, 0, 0.125);
@@ -1134,8 +1245,15 @@ body.dark .ui.comments .comment .actions a,
 body.dark .ui.card>.extra a:not(.ui),
 body.dark .ui.cards>.card>.extra a:not(.ui),
 body.dark .ui.relaxed.list .item .content,
-body.dark .ui.horizontal.divider {
-    color: rgba(255, 255, 255, 0.6);
+body.dark .ui.horizontal.divider,
+body.dark .ui.dropdown .menu>.header:not(.ui),
+body.dark .ui.link.list.list .active.item,
+body.dark .ui.link.list.list .active.item a:not(.ui) {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+
+body.dark .ui.menu .ui.dropdown .menu>.item:hover {
+    background-color: rgba(0, 0, 0, .05) !important;
 }
 
 body.dark .ui.secondary.inverted.menu .popup .list a.item,
@@ -1144,8 +1262,10 @@ body.dark .ui.pointing.dropdown>.menu>.item {
 }
 
 body.dark .ui.menu .ui.dropdown .menu>.item:hover,
+body.dark .ui.dropdown .menu>.item:hover,
 body.dark .ui.menu .ui.dropdown .menu>.item.active,
-body.dark .ui.list>.item a.header {
+body.dark .ui.list>.item a.header,
+body.dark .ui.link.list.list .active.item a:not(.ui):hover {
     color: #fff !important;
 }
 
@@ -1350,8 +1470,8 @@ body.dark .cc-window.cc-floating .cc-highlight .cc-btn.cc-allow {
 }
 
 /*
-  * Colours
-  */
+   * Colours
+   */
 
 body.dark .white {
     color: #fff;

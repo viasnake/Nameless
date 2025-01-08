@@ -12,9 +12,24 @@
                     {if $PAGE_LOAD_TIME}
                     <span class="item" id="page_load"></span>
                     {/if}
-                    <a class="item" href="javascript:" onclick="toggleDarkLightMode()">{$TOGGLE_DARK_MODE_TEXT}</a>
-                    {if !$LOGGED_IN_USER}
-                    <a class="item" href="javascript:" onclick="toggleAutoLanguage()" id="auto-language"></a>
+                    <span class="item" id="darkmode">
+                        <input type="checkbox" class="darkmode-toggle" id="darkmode-toggle" onclick="toggleDarkLightMode()">
+                        <label for="darkmode-toggle" class="darkmode-toggle-label">
+                            <i class="fas fa-moon"></i>
+                            <i class="fas fa-sun"></i>
+                            <div class="darkmode-ball"></div>
+                        </label>
+
+                        <script type="text/javascript">
+                            if (document.body.classList.contains('dark')) {
+                                document.getElementById("darkmode-toggle").checked = true;
+                            } else {
+                                document.getElementById("darkmode-toggle").checked = false;
+                            }
+                        </script>
+                    </span>
+                    {if isset($AUTO_LANGUAGE)}
+                        <a class="item" href="javascript:" onclick="toggleAutoLanguage()" id="auto-language"></a>
                     {/if}
                 </div>
             </div>
@@ -23,8 +38,8 @@
                 <div class="ui inverted link list">
                     {foreach from=$FOOTER_NAVIGATION key=name item=item}
                     {if isset($item.items)}
-                    <div class="ui pointing dropdown link item">
-                        <span class="text">{$item.icon} {$item.title}</span> <i class="dropdown icon"></i>
+                    <div class="ui dropdown item">
+                        <span class="text">{$item.icon} {$item.title} <i class="dropdown icon"></i></span>
                         <div class="menu">
                             <div class="header">{$item.title}</div>
                             {foreach from=$item.items item=dropdown}
@@ -89,29 +104,34 @@
         return false;
     }
 
-    {if !$LOGGED_IN_USER}
-    const autoLanguage = document.getElementById('auto-language');
-    const autoLanguageValue = $.cookie('auto_language') ?? 'true';
-    autoLanguage.innerText = '{$AUTO_LANGUAGE_TEXT} (' + (autoLanguageValue === 'true' ? '{$ENABLED}' : '{$DISABLED}') + ')';
-    {/if}
+    {if isset($AUTO_LANGUAGE)}
+        const autoLanguage = document.getElementById('auto-language');
+        const autoLanguageValue = $.cookie('auto_language') ?? 'true';
+        autoLanguage.innerText = '{$AUTO_LANGUAGE_TEXT} (' + (autoLanguageValue === 'true' ? '{$ENABLED}' : '{$DISABLED}') + ')';
+        {if isset($AUTO_LANGUAGE_VALUE)}
+            if (autoLanguageValue) {
+                autoLanguage.title = '{$AUTO_LANGUAGE_VALUE}';
+            }
+        {/if}
 
-    function toggleAutoLanguage() {
-        $.cookie(
-            'auto_language',
-            autoLanguageValue === 'true' ? 'false' : 'true',
-            { path: '/' }
-        );
-        window.location.reload();
-    }
+        function toggleAutoLanguage() {
+            $.cookie(
+                'auto_language',
+                autoLanguageValue === 'true' ? 'false' : 'true',
+                { path: '/' }
+            );
+            window.location.reload();
+        }
+    {/if}
 </script>
 
 {if isset($NEW_UPDATE) && ($NEW_UPDATE_URGENT != true)}
-<script src="{$TEMPLATE.path}/js/core/update.js"></script>
+    <script src="{$TEMPLATE.path}/js/core/update.js"></script>
 {/if}
 
 {if !isset($EXCLUDE_END_BODY)}
-{if isset($DEBUGBAR_HTML)}
-{$DEBUGBAR_HTML}
+    {if isset($DEBUGBAR_HTML)}
+    {$DEBUGBAR_HTML}
 {/if}
 </body>
 

@@ -69,6 +69,20 @@
                         </select>
                     </div>
                     {/if}
+                    {if isset($AUTHME_SYNC_PASSWORD)}
+                        <div class="field">
+                            <label for="inputAuthmeSync">
+                                {$AUTHME_SYNC_PASSWORD}
+                                <div class="ui icon label mini" data-tooltip="{$AUTHME_SYNC_PASSWORD_INFO}">
+                                    <i class="question icon"></i>
+                                </div>
+                            </label>
+                            <select class="ui fluid dropdown" name="authmeSync" id="inputAuthmeSync">
+                                <option value="1" {if ($AUTHME_SYNC_PASSWORD_ENABLED == true)} selected {/if}>{$ENABLED}</option>
+                                <option value="0" {if ($AUTHME_SYNC_PASSWORD_ENABLED == false)} selected {/if}>{$DISABLED}</option>
+                            </select>
+                        </div>
+                    {/if}
                     {if isset($PRIVATE_PROFILE)}
                     <div class="field">
                         <label for="inputPrivateProfile">{$PRIVATE_PROFILE}</label>
@@ -91,12 +105,13 @@
                         <label for="inputLanguage">{$ACTIVE_LANGUAGE}</label>
                         <select class="ui fluid dropdown" name="language" id="inputLanguage">
                             {foreach from=$LANGUAGES item=language}
-                            <option value="{$language.name}" {if $language.active==true} selected{/if}>{$language.name}
-                            </option>
+                                <option value="{$language.name}" {if $language.active} selected{/if}>
+                                    {$language.name}
+                                </option>
                             {/foreach}
                         </select>
                     </div>
-                    {if count($TEMPLATES) > 1}
+                    {if count($TEMPLATES) > 2}
                     <div class="field">
                         <label for="inputTemplate">{$ACTIVE_TEMPLATE}</label>
                         <select class="ui fluid dropdown" name="template" id="inputTemplate">
@@ -168,11 +183,14 @@
             <div class="ui segment">
                 <h3 class="ui header">{$TWO_FACTOR_AUTH}</h3>
                 {if isset($ENABLE)}
-                <a class="ui positive button" href="{$ENABLE_LINK}">{$ENABLE}</a>
+                    <a class="ui positive button" href="{$ENABLE_LINK}">{$ENABLE}</a>
                 {elseif isset($FORCED)}
-                <button class="ui negative button" disabled>{$DISABLE}</button>
+                    <button class="ui negative button" disabled>{$DISABLE}</button>
                 {else}
-                <a class="ui negative button" href="{$DISABLE_LINK}">{$DISABLE}</a>
+                    <form class="ui form" action="{$DISABLE_LINK}" method="post">
+                        <input type="hidden" name="token" value="{$TOKEN}">
+                        <input type="submit" value="{$DISABLE}" class="ui negative button">
+                    </form>
                 {/if}
             </div>
             {if isset($CUSTOM_AVATARS)}
@@ -191,6 +209,16 @@
                     <input type="submit" class="ui primary button" value="{$SUBMIT}">
                 </form>
             </div>
+                {if $HAS_CUSTOM_AVATAR}
+                <div class="ui segment">
+                    <h3 class="ui header">{$REMOVE_AVATAR}</h3>
+                    <form class="ui form" action="" method="post" id="form-reset-avatar">
+                        <input type="hidden" name="action" value="reset_avatar">
+                        <input type="hidden" name="token" value="{$TOKEN}">
+                        <input type="submit" value="{$REMOVE}" class="ui red button">
+                    </form>
+                </div>
+                {/if}
             {/if}
         </div>
     </div>

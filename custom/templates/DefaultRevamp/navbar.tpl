@@ -3,19 +3,20 @@
         <h3>{$SITE_NAME}</h3>
     </div>
     {foreach from=$NAV_LINKS key=name item=item}
-    {if isset($item.items)}
-    <div class="item">
-        <div class="header">{$item.title} <span class="icon">{$item.icon}</span></div>
-        <div class="menu">
-            {foreach from=$item.items item=dropdown}
-            <a class="item" href="{$dropdown.link}" target="{$dropdown.target}">{$dropdown.icon} {$dropdown.title}</a>
-            {/foreach}
-        </div>
-    </div>
-    {else}
-    <a class="item{if isset($item.active)} active{/if}" href="{$item.link}" target="{$item.target}">{$item.icon}
-        {$item.title}</a>
-    {/if}
+        {if isset($item.items)}
+            <div class="item">
+                <div class="header">{$item.title} <span class="icon">{$item.icon}</span></div>
+                <div class="menu">
+                    {foreach from=$item.items item=dropdown}
+                        <a class="item" href="{$dropdown.link}" target="{$dropdown.target}">{$dropdown.icon} {$dropdown.title}</a>
+                    {/foreach}
+                </div>
+            </div>
+        {else}
+            <a class="item{if isset($item.active)} active{/if}" href="{$item.link}" target="{$item.target}">{$item.icon}
+                {$item.title}
+            </a>
+        {/if}
     {/foreach}
 </div>
 
@@ -24,27 +25,28 @@
         <div class="ui secondary {$DEFAULT_REVAMP_NAVBAR_EXTRA_CLASSES} small menu" id="navbar">
             <div class="ui container">
                 {foreach from=$NAV_LINKS key=name item=item}
-                {if isset($item.items)}
-                <div class="ui dropdown item">
-                    {$item.icon} {$item.title}
-                    <i class="dropdown icon"></i>
-                    <div class="menu">
-                        <div class="header">{$item.title}</div>
-                        {foreach from=$item.items item=dropdown}
-                        {if isset($dropdown.separator)}
-                        <div class="divider"></div>
-                        {else}
-                        <a class="item" href="{$dropdown.link}" target="{$dropdown.target}">{$dropdown.icon}
-                            {$dropdown.title}</a>
-                        {/if}
-                        {/foreach}
-                    </div>
-                </div>
-                {else}
-                <a class="item{if isset($item.active)} active{/if}" href="{$item.link}"
-                    target="{$item.target}">{$item.icon}
-                    {$item.title}</a>
-                {/if}
+                    {if isset($item.items)}
+                        <div class="ui dropdown item">
+                            {$item.icon} {$item.title}
+                            <i class="dropdown icon"></i>
+                            <div class="menu">
+                                <div class="header">{$item.title}</div>
+                                {foreach from=$item.items item=dropdown}
+                                    {if isset($dropdown.separator)}
+                                        <div class="divider"></div>
+                                    {else}
+                                        <a class="item" href="{$dropdown.link}" target="{$dropdown.target}">
+                                            {$dropdown.icon} {$dropdown.title}
+                                        </a>
+                                    {/if}
+                                {/foreach}
+                            </div>
+                        </div>
+                    {else}
+                        <a class="item{if isset($item.active)} active{/if}" href="{$item.link}" target="{$item.target}">
+                            {$item.icon} {$item.title}
+                        </a>
+                    {/if}
                 {/foreach}
                 <a class="toc item">
                     <i class="sidebar icon"></i>
@@ -66,8 +68,15 @@
                             {if isset($dropdown.separator)}
                             <div class="ui divider"></div>
                             {else}
-                            <a class="item" href="{$dropdown.link}" target="{$dropdown.target}">{$dropdown.icon}
-                                {$dropdown.title}</a>
+                                {if isset($dropdown.action)}
+                                    <a class="item" href="#" data-link="{$dropdown.link}" data-action="{$dropdown.action}">
+                                        {$dropdown.icon} {$dropdown.title}
+                                    </a>
+                                {else}
+                                    <a class="item" href="{$dropdown.link}" target="{$dropdown.target}">
+                                        {$dropdown.icon} {$dropdown.title}
+                                    </a>
+                                {/if}
                             {/if}
                             {/foreach}
                         </div>
@@ -143,7 +152,7 @@
                 <div class="ui info icon message" id="update-message">
                     <i class="close icon"></i>
                     {/if}
-                    <a href="{$UPDATE_LINK}">
+                    <a href="{$NAMELESS_UPDATE_LINK}">
                         <i class="download icon"></i>
                     </a>
                     <div class="content">
@@ -178,5 +187,12 @@
                 {if isset($MUST_VALIDATE_ACCOUNT)}
                 <div class="ui message">
                     {$MUST_VALIDATE_ACCOUNT}
+                </div>
+                {/if}
+
+                {if isset($MAINTENANCE_ENABLED)}
+                <div class="ui warning message">
+                    <i class="close icon"></i>
+                    {$MAINTENANCE_ENABLED}
                 </div>
                 {/if}

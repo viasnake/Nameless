@@ -2,7 +2,7 @@
 /*
  *  Made by Samerton
  *  https://github.com/NamelessMC/Nameless/
- *  NamelessMC version 2.0.0-pr9
+ *  NamelessMC version 2.1.1
  *
  *  License: MIT
  *
@@ -22,11 +22,25 @@ if (!isset($page)) {
     die('$page variable is unset. Cannot continue.');
 }
 
-if (!file_exists(ROOT_PATH . '/core/config.php')) {
-    if (is_writable(ROOT_PATH . '/core')) {
-        fopen(ROOT_PATH . '/core/config.php', 'w');
-    } else {
-        die('Your <strong>/core</strong> directory is not writable, please check your file permissions.');
+Debugging::setCanViewDetailedError(defined('DEBUGGING') && DEBUGGING);
+Debugging::setCanGenerateDebugLink(defined('DEBUGGING') && DEBUGGING);
+
+// All paths should be writable, but recursively checking everything would take too much time.
+// Only check the most important paths.
+$writable_check_paths = [
+    ROOT_PATH,
+    ROOT_PATH . '/cache',
+    ROOT_PATH . '/cache/logs',
+    ROOT_PATH . '/cache/sitemaps',
+    ROOT_PATH . '/cache/templates_c',
+    ROOT_PATH . '/uploads',
+    ROOT_PATH . '/core/config.php'
+];
+
+foreach ($writable_check_paths as $path) {
+    if (is_dir($path) && !is_writable($path)) {
+        die('<p>Your website directory or a subdirectory is not writable. Please ensure all files and directories are owned by
+        the correct user.</p><p><strong>Example</strong> command to change owner recursively: <code>sudo chown -R www-data: ' . Output::getClean(ROOT_PATH) . '</code></p>');
     }
 }
 
@@ -38,15 +52,8 @@ if (!file_exists(ROOT_PATH . '/cache/templates_c')) {
     }
 }
 
-// Require config
-require(ROOT_PATH . '/core/config.php');
-
-if (isset($conf) && is_array($conf)) {
-    $GLOBALS['config'] = $conf;
-} else {
-    if (!isset($GLOBALS['config'])) {
-        $page = 'install';
-    }
+if (!Config::exists()) {
+    $page = 'install';
 }
 
 // If we're accessing the upgrade script don't initialise further
@@ -61,32 +68,42 @@ if ($page != 'install') {
      * Initialise
      */
 
-    // Friendly URLs?
-    define('FRIENDLY_URLS', Config::get('core/friendly') == 'true');
+    $container = new \DI\Container();
+    $container->set('Cache', \DI\create()->constructor(
+        [
+            'name' => 'nameless',
+            'extension' => '.cache',
+            'path' => ROOT_PATH . '/cache/'
+        ]
+    ));
 
-    // Set up cache
-    $cache = new Cache(['name' => 'nameless', 'extension' => '.cache', 'path' => ROOT_PATH . '/cache/']);
+    /** @var Cache $cache */
+    $cache = $container->get('Cache');
+
+    // Friendly URLs?
+    define('FRIENDLY_URLS', Config::get('core.friendly') == 'true');
 
     // Force https/www?
-    if (Config::get('core/force_https')) {
+    if (Config::get('core.force_https')) {
         define('FORCE_SSL', true);
     }
-    if (Config::get('core/force_www')) {
+    if (Config::get('core.force_www')) {
         define('FORCE_WWW', true);
     }
 
-    if (defined('FORCE_SSL') && Util::getProtocol() === 'http') {
-        if (defined('FORCE_WWW') && !str_contains($_SERVER['HTTP_HOST'], 'www.')) {
-            header('Location: https://www.' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
-            die();
+    $host = HttpUtils::getHeader('Host');
+    // Only check force HTTPS and force www. when Host header is set
+    // These options don't make sense when making requests to IP addresses anyway
+    if ($host !== null) {
+        if (defined('FORCE_SSL') && HttpUtils::getProtocol() === 'http') {
+            if (defined('FORCE_WWW') && !str_contains($host, 'www.')) {
+                Redirect::to('https://www.' . $host . $_SERVER['REQUEST_URI']);
+            } else {
+                Redirect::to('https://' . $host . $_SERVER['REQUEST_URI']);
+            }
+        } else if (defined('FORCE_WWW') && !str_contains($host, 'www.')) {
+            Redirect::to(HttpUtils::getProtocol() . '://www.' . $host . $_SERVER['REQUEST_URI']);
         }
-
-        header('Location: https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
-        die();
-    }
-
-    if (defined('FORCE_WWW') && !str_contains($_SERVER['HTTP_HOST'], 'www.')) {
-        header('Location: ' . Util::getProtocol() . '://www.' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
     }
 
     // Ensure database is up-to-date
@@ -106,9 +123,10 @@ if ($page != 'install') {
         }
     }
 
-    $smarty = new Smarty();
+    /** @var Smarty $smarty */
+    $smarty = $container->get('Smarty');
 
-    if ((defined('DEBUGGING') && DEBUGGING) && Composer\InstalledVersions::isInstalled('maximebf/debugbar')) {
+    if ((defined('DEBUGGING') && DEBUGGING) && class_exists('DebugBar\DebugBar')) {
         define('PHPDEBUGBAR', true);
         DebugBarHelper::getInstance()->enable($smarty);
     }
@@ -117,18 +135,18 @@ if ($page != 'install') {
     define('NAMELESS_VERSION', Util::getSetting('nameless_version'));
 
     // Set the date format
-    define('DATE_FORMAT', Config::get('core/date_format') ?: 'd M Y, H:i');
+    define('DATE_FORMAT', Config::get('core.date_format') ?: 'd M Y, H:i');
 
     // User initialisation
     $user = new User();
     // Do they need logging in (checked remember me)?
-    if (Cookie::exists(Config::get('remember/cookie_name')) && !Session::exists(Config::get('session/session_name'))) {
-        $hash = Cookie::get(Config::get('remember/cookie_name'));
-        $hashCheck = DB::getInstance()->get('users_session', ['hash', $hash]);
+    if (Cookie::exists(Config::get('remember.cookie_name')) && !Session::exists(Config::get('session.session_name'))) {
+        $hash = Cookie::get(Config::get('remember.cookie_name'));
+        $hashCheck = DB::getInstance()->get('users_session', [['hash', $hash], ['active', true]]);
 
         if ($hashCheck->count()) {
             $user = new User($hashCheck->first()->user_id);
-            $user->login();
+            $user->login(null, $hash, true, 'hash');
         }
     }
 
@@ -140,16 +158,16 @@ if ($page != 'install') {
 
         $directories = array_values($directories);
 
-        $config_path = Config::get('core/path');
+        $config_path = Config::get('core.path');
 
         if (!empty($config_path)) {
-            $config_path = explode('/', Config::get('core/path'));
+            $config_path = explode('/', Config::get('core.path'));
 
             for ($i = 0, $iMax = count($config_path); $i < $iMax; $i++) {
                 unset($directories[$i]);
             }
 
-            define('CONFIG_PATH', '/' . Config::get('core/path'));
+            define('CONFIG_PATH', '/' . Config::get('core.path'));
 
             $directories = array_values($directories);
         }
@@ -185,11 +203,13 @@ if ($page != 'install') {
     define('DEFAULT_LANGUAGE', $default_language);
 
     if (!$user->isLoggedIn() || !($user->data()->language_id)) {
-        // Attempt to get the requested language from the browser if it exists
-        // and if the user has enabled auto language detection
-        $automatic_locale = Language::acceptFromHttp($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '');
-        if ($automatic_locale !== false && (!Cookie::exists('auto_language') || Cookie::get('auto_language') === 'true')) {
-            $default_language = $automatic_locale;
+        if (Util::getSetting('auto_language_detection') && (!Cookie::exists('auto_language') || Cookie::get('auto_language') === 'true')) {
+            // Attempt to get the requested language from the browser if it exists
+            $automatic_locale = Language::acceptFromHttp(HttpUtils::getHeader('Accept-Language') ?? '');
+            if ($automatic_locale !== false) {
+                $smarty->assign('AUTO_LANGUAGE_VALUE', $automatic_locale[1]);
+                $default_language = $automatic_locale[0];
+            }
         }
 
         // Default language for guests
@@ -204,11 +224,14 @@ if ($page != 'install') {
             define('LANGUAGE', $language[0]->short_code);
         }
     }
-    $language = new Language('core', LANGUAGE);
+    $container->set('Language', \DI\create()->constructor('core', LANGUAGE));
+
+    /** @var Language $language */
+    $language = $container->get('Language');
 
     // Site name
     $sitename = Util::getSetting('sitename');
-    if ($sitename == null) {
+    if ($sitename === null) {
         die('No sitename in settings table');
     }
     define('SITE_NAME', $sitename);
@@ -312,13 +335,17 @@ if ($page != 'install') {
     // Basic Smarty variables
     $smarty->assign([
         'CONFIG_PATH' => defined('CONFIG_PATH') ? CONFIG_PATH . '/' : '/',
-        'OG_URL' => Output::getClean(rtrim(Util::getSelfURL(), '/') . $_SERVER['REQUEST_URI']),
-        'OG_IMAGE' => Output::getClean(rtrim(Util::getSelfURL(), '/') . '/core/assets/img/site_image.png'),
+        'OG_URL' => Output::getClean(rtrim(URL::getSelfURL(), '/') . $_SERVER['REQUEST_URI']),
         'SITE_NAME' => Output::getClean(SITE_NAME),
         'SITE_HOME' => URL::build('/'),
         'USER_INFO_URL' => URL::build('/queries/user/', 'id='),
         'GUEST' => $language->get('user', 'guest')
     ]);
+    $cache->setCache('backgroundcache');
+    if ($cache->isCached('og_image')) {
+        // Assign the image value now, some pages may override it (via Page Metadata config)
+        $smarty->assign('OG_IMAGE', rtrim(URL::getSelfURL(), '/') . $cache->retrieve('og_image'));
+    }
 
     // Avatars
     $cache->setCache('avatar_settings_cache');
@@ -349,34 +376,8 @@ if ($page != 'install') {
         define('DEFAULT_AVATAR_PERSPECTIVE', 'face');
     }
 
-    // Widgets
-    $widgets = new Widgets($cache);
-
-    // Maintenance mode?
-    if (Util::getSetting('maintenance') === '1') {
-        // Enabled
-        // Admins only beyond this point
-        if (!$user->isLoggedIn() || !$user->canViewStaffCP()) {
-            // Maintenance mode
-            if (isset($_GET['route']) && (
-                rtrim($_GET['route'], '/') == '/login'
-                || rtrim($_GET['route'], '/') == '/forgot_password'
-                || str_contains($_GET['route'], '/api/')
-                || str_contains($_GET['route'], 'queries')
-            )) {
-                // Can continue as normal
-            } else {
-                require(ROOT_PATH . '/maintenance.php');
-                die();
-            }
-        } else {
-            // Display notice to admin stating maintenance mode is enabled
-            $smarty->assign('MAINTENANCE_ENABLED', $language->get('admin', 'maintenance_enabled'));
-        }
-    }
-
-    // Minecraft integration?
-    define('MINECRAFT', Util::getSetting('mc_integration', '0') === '1');
+    /** @var Widgets $widgets */
+    $widgets = $container->get('Widgets');
 
     // Navbar links
     $navigation = new Navigation();
@@ -416,11 +417,11 @@ if ($page != 'install') {
 
     $navigation->add('index', $language->get('general', 'home'), URL::build('/'), 'top', null, $home_order, $home_icon);
 
-    // Endpoints
-    $endpoints = new Endpoints();
+    /** @var Endpoints $endpoints */
+    $endpoints = $container->get('Endpoints');
 
-    // Announcements
-    $announcements = new Announcements($cache);
+    /** @var Announcements $announcements */
+    $announcements = $container->get('Announcements');
 
     // Modules
     $cache->setCache('modulescache');
@@ -446,16 +447,48 @@ if ($page != 'install') {
         ];
     }
 
-    $pages = new Pages();
+    $pages = $container->get('Pages');
 
     // Sort by priority
     usort($enabled_modules, static function ($a, $b) {
         return $a['priority'] - $b['priority'];
     });
 
+    // Load module dependencies
+    foreach ($enabled_modules as $module) {
+        if (file_exists(ROOT_PATH . '/modules/' . $module['name'] . '/autoload.php')) {
+            require_once ROOT_PATH . '/modules/' . $module['name'] . '/autoload.php';
+        }
+    }
+
+    // Load modules
     foreach ($enabled_modules as $module) {
         if (file_exists(ROOT_PATH . '/modules/' . $module['name'] . '/init.php')) {
-            require(ROOT_PATH . '/modules/' . $module['name'] . '/init.php');
+            require_once ROOT_PATH . '/modules/' . $module['name'] . '/init.php';
+        }
+    }
+
+    // Maintenance mode?
+    if (Util::getSetting('maintenance') === '1') {
+        // Enabled
+        // Admins only beyond this point
+        if (!$user->isLoggedIn() || !$user->canViewStaffCP()) {
+            // Maintenance mode
+            if (isset($_GET['route']) && (
+                    rtrim($_GET['route'], '/') === '/login'
+                    || rtrim($_GET['route'], '/') === '/forgot_password'
+                    || str_contains($_GET['route'], '/api/')
+                    || str_contains($_GET['route'], 'queries')
+                    || str_contains($_GET['route'], 'oauth/')
+                )) {
+                // Can continue as normal
+            } else {
+                require(ROOT_PATH . '/core/includes/maintenance.php');
+                die();
+            }
+        } else {
+            // Display notice to admin stating maintenance mode is enabled
+            $smarty->assign('MAINTENANCE_ENABLED', $language->get('admin', 'maintenance_enabled'));
         }
     }
 
@@ -469,19 +502,21 @@ if ($page != 'install') {
             $hooks = DB::getInstance()->get('hooks', ['id', '<>', 0])->results();
             if (count($hooks)) {
                 foreach ($hooks as $hook) {
-                    if ($hook->action != 2) {
+                    if ($hook->action != 1 && $hook->action != 2) {
                         continue;
                     }
 
                     // TODO: more extendable webhook system, #2676
-                    if (!class_exists(DiscordHook::class)) {
+                    if ($hook->action == 2 && !class_exists(DiscordHook::class)) {
                         continue;
                     }
 
                     $hook_array[] = [
                         'id' => $hook->id,
                         'url' => Output::getClean($hook->url),
-                        'action' => 'DiscordHook::execute',
+                        'action' => $hook->action == 1
+                            ? [WebHook::class, 'execute']
+                            : [DiscordHook::class, 'execute'],
                         'events' => json_decode($hook->events, true)
                     ];
                 }
@@ -492,10 +527,13 @@ if ($page != 'install') {
     EventHandler::registerWebhooks($hook_array);
 
     // Get IP
-    $ip = Util::getRemoteAddress();
+    $ip = HttpUtils::getRemoteAddress();
 
     // Perform tasks if the user is logged in
     if ($user->isLoggedIn()) {
+        Debugging::setCanViewDetailedError($user->hasPermission('admincp.errors'));
+        Debugging::setCanGenerateDebugLink($user->hasPermission('admincp.core.debugging'));
+
         // Ensure a user is not banned
         if ($user->data()->isbanned == 1) {
             $user->logout();
@@ -571,7 +609,7 @@ if ($page != 'install') {
         if (isset($forced) && $forced) {
             // Do they have TFA configured?
             if (!$user->data()->tfa_enabled && rtrim($_GET['route'], '/') != '/logout') {
-                if (!str_contains($_SERVER['REQUEST_URI'], 'do=enable_tfa')) {
+                if (!str_contains($_SERVER['REQUEST_URI'], 'do=enable_tfa') && !isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
                     Session::put('force_tfa_alert', $language->get('admin', 'force_tfa_alert'));
                     Redirect::to(URL::build('/user/settings', 'do=enable_tfa'));
                 }
@@ -619,6 +657,11 @@ if ($page != 'install') {
             }
 
             $_SESSION['checked'] = $date;
+        }
+
+        // Auto language enabled?
+        if (Util::getSetting('auto_language_detection')) {
+            $smarty->assign('AUTO_LANGUAGE', true);
         }
     }
 
